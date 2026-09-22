@@ -217,14 +217,23 @@ def handle_too_large(_err):
 
 # ---------- desktop app downloads ----------
 
-RELEASES_PAGE = "https://github.com/nmsheikh/pdforge/releases/latest"
+RELEASES = "https://github.com/nmsheikh/pdforge/releases"
+RELEASES_PAGE = f"{RELEASES}/latest"
 RELEASES_API = "https://api.github.com/repos/nmsheikh/pdforge/releases/latest"
+# Bump this with each desktop release (desktop/package.json, tauri.conf.json, Cargo.toml).
+APP_VERSION = "3.0.1"
 # Installer file names produced by the GitHub Actions release build (Tauri).
 DOWNLOAD_PATTERNS = {
     "mac-arm": r"_aarch64\.dmg$",
     "mac-intel": r"_x64\.dmg$",
     "windows": r"_x64-setup\.exe$",
     "linux": r"_amd64\.deb$",
+}
+DOWNLOAD_FILES = {
+    "mac-arm": f"pdforge_{APP_VERSION}_aarch64.dmg",
+    "mac-intel": f"pdforge_{APP_VERSION}_x64.dmg",
+    "windows": f"pdforge_{APP_VERSION}_x64-setup.exe",
+    "linux": f"pdforge_{APP_VERSION}_amd64.deb",
 }
 _release_cache = {"at": 0.0, "assets": []}
 
@@ -238,20 +247,24 @@ def latest_release_assets():
                 _release_cache["assets"] = json.load(resp).get("assets", [])
             _release_cache["at"] = time.time()
         except Exception:
-            pass  # keep whatever we had; the caller falls back to the releases page
+            _release_cache["at"] = time.time()  # don't retry on every request
     return _release_cache["assets"]
 
 
 @app.get("/download/<platform>")
 def download(platform):
-    """Redirect to the newest installer for a platform (so links never go stale)."""
+    """Redirect to the newest installer for a platform (so links never go stale).
+
+    GitHub's API is rate limited per IP and Vercel shares IPs, so fall back to
+    the version this build knows about rather than dumping people on a file list.
+    """
     pattern = DOWNLOAD_PATTERNS.get(platform)
     if not pattern:
         abort(404)
     for asset in latest_release_assets():
         if re.search(pattern, asset.get("name", "")):
             return redirect(asset["browser_download_url"])
-    return redirect(RELEASES_PAGE)
+    return redirect(f"{RELEASES}/download/v{APP_VERSION}/{DOWNLOAD_FILES[platform]}")
 
 
 @app.route("/")
