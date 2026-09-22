@@ -2,6 +2,7 @@
 
 const $ = (id) => document.getElementById(id);
 const MM = 72 / 25.4; // points per millimetre
+const MAX_UPLOAD_BYTES = (+document.body.dataset.maxUploadMb || 200) * 1024 * 1024;
 
 // Icon paths adapted from Lucide (ISC licence).
 const ICONS = {
@@ -334,7 +335,12 @@ async function postForm(url, fd) {
   const res = await fetch(url, { method: "POST", body: fd });
   if (!res.ok) {
     let msg = "Something went wrong.";
-    try { msg = (await res.json()).error || msg; } catch (_) {}
+    try {
+      msg = (await res.json()).error || msg;
+    } catch (_) {
+      // Not our JSON: the hosting platform rejected the request itself.
+      if (res.status === 413) msg = `That's too large for the online version (limit ${MAX_UPLOAD_BYTES / 1048576} MB).`;
+    }
     throw new Error(msg);
   }
   return res;
@@ -431,9 +437,16 @@ async function addFiles(list) {
   if (rejected.length) alert(`Skipped ${rejected.map((f) => f.name).join(", ")}: not ${wantPdf ? "a PDF" : "an image"}.`);
   if (!incoming.length) return;
 
+  const next = tool.multiple ? files.concat(incoming) : [incoming[0]];
+  const total = next.reduce((s, f) => s + f.size, 0);
+  if (total > MAX_UPLOAD_BYTES) {
+    alert(`That's ${fmtSize(total)} in total. The limit is ${fmtSize(MAX_UPLOAD_BYTES)} per upload.`);
+    return;
+  }
+
   const firstRender = $("stepOptions").hidden;
   const wasEncrypted = !!info.encrypted;
-  files = tool.multiple ? files.concat(incoming) : [incoming[0]];
+  files = next;
 
   if (wantPdf) {
     if (firstRender) { $("workingMsg").textContent = "Reading your file…"; show("stepWorking"); }

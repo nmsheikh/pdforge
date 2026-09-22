@@ -20,7 +20,11 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas as rl_canvas
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB per request
+# Vercel's serverless functions accept and return at most 4.5 MB per request.
+ON_VERCEL = bool(os.environ.get("VERCEL"))
+MAX_UPLOAD_MB = 4 if ON_VERCEL else 200
+MAX_RESULT_BYTES = int(4.4 * 1024 * 1024) if ON_VERCEL else None
+app.config["MAX_CONTENT_LENGTH"] = int((MAX_UPLOAD_MB + 0.4) * 1024 * 1024)  # + room for form fields
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # always serve the latest JS/CSS
 THUMB_WIDTH = 180  # px, page-picker previews
 MM = 72 / 25.4  # points per millimetre
@@ -95,6 +99,11 @@ MIMETYPES = {".pdf": "application/pdf", ".zip": "application/zip", ".jpg": "imag
 
 
 def send_bytes(data, filename):
+    if MAX_RESULT_BYTES and len(data) > MAX_RESULT_BYTES:
+        raise ToolError(
+            f"The result is {len(data) / 1048576:.1f} MB, more than the online version can send back "
+            f"({MAX_UPLOAD_MB} MB). Try fewer pages or files, or run pdforge on your own computer."
+        )
     mimetype = MIMETYPES.get(os.path.splitext(filename)[1].lower(), "application/octet-stream")
     return send_file(io.BytesIO(data), mimetype=mimetype, as_attachment=True, download_name=filename)
 
@@ -201,12 +210,12 @@ def handle_tool_error(err):
 
 @app.errorhandler(413)
 def handle_too_large(_err):
-    return jsonify(error="File is too large (limit is 200 MB)."), 413
+    return jsonify(error=f"Files are too large. The limit is {MAX_UPLOAD_MB} MB per upload."), 413
 
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", max_upload_mb=MAX_UPLOAD_MB, online=ON_VERCEL)
 
 
 def read_metadata(pdf):

@@ -7,7 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body data-max-upload-mb="{{ max_upload_mb }}">
 <header class="topbar">
   <a href="#" class="brand" id="homeLink" aria-label="pdforge home">
     <img class="logo" src="{{ url_for('static', filename='logo.svg') }}" alt="" width="40" height="40"><span>pdforge</span>
@@ -25,7 +25,7 @@
   <!-- Home: tool catalogue -->
   <section id="home">
     <h1>Every tool you need to work with PDFs</h1>
-    <p class="lead">Pick a tool, drop your file, download the result. Everything runs on your own machine.</p>
+    <p class="lead">Pick a tool, drop your file, download the result.</p>
     <div class="chips" id="chips" role="tablist" aria-label="Tool categories"></div>
     <div class="grid" id="toolGrid"></div>
   </section>
@@ -100,7 +100,11 @@
   </section>
 </main>
 
-<footer>Processed locally on your server, in memory. Nothing is stored.</footer>
+<footer>
+  Files are processed in memory and never stored.
+  {% if online %}Online version: up to {{ max_upload_mb }} MB per upload.
+  For bigger files, <a href="https://github.com/nmsheikh/pdforge">run pdforge on your own computer</a>.{% endif %}
+</footer>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
