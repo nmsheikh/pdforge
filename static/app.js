@@ -54,6 +54,14 @@ function range(name, min, max, value, unit) {
   return `<div class="range"><input type="range" name="${name}" min="${min}" max="${max}" value="${value}">
     <output>${value}${unit}</output></div>`;
 }
+// Password box with a show/hide (eye) button.
+function passwordInput(name, { id = "", autocomplete = "off", ui = false } = {}) {
+  return `<div class="pw-wrap">
+    <input type="password" name="${name}"${id ? ` id="${id}"` : ""} autocomplete="${autocomplete}"${ui ? ' data-ui="1"' : ""}>
+    <button type="button" class="eye" aria-label="Show password" title="Show password">👁</button>
+  </div>`;
+}
+
 function check(name, label, checked = false) {
   return `<label class="check-row"><input type="checkbox" name="${name}" value="1" ${checked ? "checked" : ""}> <span>${label}</span></label>`;
 }
@@ -283,7 +291,7 @@ const TOOLS = [
     desc: "Remove the password from PDFs. Enter the password once and download unlocked copies.",
     endpoint: "/api/unlock", multiple: true, ownPassword: true, button: "Unlock PDF",
     options: (info) => info.encrypted
-      ? field("PDF password", `<input type="password" name="password" autocomplete="off">`,
+      ? field("PDF password", passwordInput("password"),
         files.length > 1 ? "Used for every protected file you uploaded." : "")
       : `<p class="note">${files.length > 1 ? "None of these PDFs is" : "This PDF isn't"} password-protected. You can still process ${files.length > 1 ? "them" : "it"} to get a clean copy.</p>`,
     validate: (fd, info) => (info.encrypted && !fd.get("password") ? "Enter the PDF password." : null),
@@ -294,11 +302,11 @@ const TOOLS = [
     endpoint: "/api/protect", multiple: true, ownPassword: true,
     button: (info) => (info.encrypted ? "Change password" : "Protect PDF"),
     options: (info) => `
-      ${info.encrypted ? field("Current password", `<input type="password" name="password" autocomplete="off">`,
+      ${info.encrypted ? field("Current password", passwordInput("password"),
         "Already protected. Enter the current password to change it.") : ""}
       <div class="two">
-        ${field("New password", `<input type="password" name="new_password" autocomplete="new-password">`)}
-        ${field("Repeat new password", `<input type="password" name="confirm" autocomplete="new-password">`)}
+        ${field("New password", passwordInput("new_password", { autocomplete: "new-password" }))}
+        ${field("Repeat new password", passwordInput("confirm", { autocomplete: "new-password" }))}
       </div>
       <p class="hint">Encrypted with AES-256.</p>
       <div class="field"><label>Restrictions <span class="muted">(optional)</span></label>
@@ -327,6 +335,9 @@ let result = null; // { blob, name } of the last processed file
 let downloadUrl = null;
 let pendingFiles = null; // files carried over by "Continue with…"
 let activeCategory = "all";
+
+// The password for protected uploads (Unlock/Protect name it, other tools get a generated field).
+const pwValue = () => $("options").querySelector('input[name="password"]')?.value || "";
 
 function show(step) {
   for (const s of ["stepUpload", "stepOptions", "stepWorking", "stepDone"]) $(s).hidden = s !== step;
@@ -483,22 +494,49 @@ function summarize() {
   };
 }
 
+let fileView = localStorage.getItem("pdforge.fileView") === "grid" ? "grid" : "list";
+const thumbCache = new Map(); // File -> page 1 data URL
+
+function fileActions(i) {
+  if (!tool.multiple) return "";
+  return `${tool.ordered ? `
+      <button class="mini" data-act="up" data-i="${i}" title="Move ${fileView === "grid" ? "left" : "up"}" ${i === 0 ? "disabled" : ""}>${fileView === "grid" ? "←" : "↑"}</button>
+      <button class="mini" data-act="down" data-i="${i}" title="Move ${fileView === "grid" ? "right" : "down"}" ${i === files.length - 1 ? "disabled" : ""}>${fileView === "grid" ? "→" : "↓"}</button>` : ""}
+    <button class="mini" data-act="del" data-i="${i}" title="Remove">✕</button>`;
+}
+
 function renderFileList() {
-  $("fileList").innerHTML = files.map((f, i) => {
+  const list = $("fileList");
+  list.className = `filelist ${fileView}`;
+  const pdfs = !tool.accept;
+  list.innerHTML = files.map((f, i) => {
     const fi = fileInfo[i] || {};
-    return `<li>
+    const pages = fi.pages ? `${fi.pages} page${fi.pages === 1 ? "" : "s"}` : "";
+    const lock = fi.encrypted ? '<span class="badge">🔒 Protected</span>' : "";
+    const expand = pdfs ? `<button class="expand" data-expand="${i}" title="Open a bigger preview" aria-label="Open a bigger preview of ${esc(f.name)}">⤢</button>` : "";
+    if (fileView === "grid") {
+      return `<div class="file-card">
+        ${expand}
+        <div class="file-thumb" data-thumb="${i}">${fi.encrypted ? '<span class="thumb-lock">🔒</span>' : '<span class="thumb-wait"></span>'}</div>
+        <div class="file-body">
+          <span class="fname" title="${esc(f.name)}">${esc(f.name)}</span>
+          <span class="fsize">${[pages, fmtSize(f.size)].filter(Boolean).join(" · ")}</span>
+          ${lock}
+        </div>
+        <div class="file-actions">${fileActions(i)}</div>
+      </div>`;
+    }
+    return `<div class="file-row">
+      ${expand}
       <span class="fname" title="${esc(f.name)}">${esc(f.name)}</span>
-      ${fi.encrypted ? '<span class="badge">🔒 Protected</span>' : ""}
-      ${fi.pages ? `<span class="fsize">${fi.pages} page${fi.pages === 1 ? "" : "s"}</span>` : ""}
+      ${lock}
+      ${pages ? `<span class="fsize">${pages}</span>` : ""}
       <span class="fsize">${fmtSize(f.size)}</span>
-      ${tool.multiple ? `
-        ${tool.ordered ? `
-          <button class="mini" data-act="up" data-i="${i}" title="Move up" ${i === 0 ? "disabled" : ""}>↑</button>
-          <button class="mini" data-act="down" data-i="${i}" title="Move down" ${i === files.length - 1 ? "disabled" : ""}>↓</button>` : ""}
-        <button class="mini" data-act="del" data-i="${i}" title="Remove">✕</button>` : ""}
-    </li>`;
+      ${fileActions(i)}
+    </div>`;
   }).join("");
-  $("fileList").querySelectorAll(".mini").forEach((b) => b.addEventListener("click", () => {
+
+  list.querySelectorAll(".mini").forEach((b) => b.addEventListener("click", () => {
     const i = +b.dataset.i;
     const wasEncrypted = info.encrypted;
     const move = (arr, j) => { [arr[i], arr[j]] = [arr[j], arr[i]]; };
@@ -509,16 +547,65 @@ function renderFileList() {
     renderFileList();
     if (wasEncrypted !== info.encrypted) renderOptions();
   }));
+  list.querySelectorAll("[data-expand]").forEach((b) =>
+    b.addEventListener("click", () => openPreview(+b.dataset.expand)));
+
+  $("filesCount").textContent = files.length === 1
+    ? esc(files[0].name)
+    : `${files.length} files`;
+  $("filesHead").hidden = !pdfs && files.length < 2;
+  $("viewSwitch").hidden = files.length < 2;
+  $("viewSwitch").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.view === fileView));
   $("addMoreBtn").hidden = !tool.multiple;
+  if (fileView === "grid" && pdfs) loadFileThumbs();
+}
+
+// Page-1 thumbnails for the grid view, loaded one file at a time.
+async function loadFileThumbs() {
+  for (const el of [...$("fileList").querySelectorAll("[data-thumb]")]) {
+    const i = +el.dataset.thumb;
+    const f = files[i];
+    if (!f || ((fileInfo[i] || {}).encrypted && !pwValue())) continue; // locked and no password yet
+    try {
+      const key = `${f.name}|${f.size}|${pwValue()}`;
+      if (thumbCache.get(f) !== undefined && thumbCache.get(f).key === key) {
+        // already rendered with this password
+      } else {
+        const fd = new FormData();
+        fd.append("files", f);
+        fd.append("limit", "1");
+        fd.append("width", "260");
+        fd.append("password", pwValue());
+        const data = await (await postForm("/api/thumbnails", fd)).json();
+        thumbCache.set(f, { key, src: data.pages[0] });
+      }
+      if (files[i] === f && el.isConnected) el.innerHTML = `<img src="${thumbCache.get(f).src}" alt="">`;
+    } catch (_) {
+      if (el.isConnected) el.innerHTML = '<span class="thumb-lock">?</span>';
+    }
+  }
 }
 
 function renderOptions() {
   const pwField = info.encrypted && !tool.ownPassword
     ? field(files.length > 1 ? "Password for the protected files" : "PDF password",
-      `<input type="password" id="password" name="password" autocomplete="off">`,
+      passwordInput("password", { id: "password" }),
       "This PDF is protected. Enter its password to continue.")
     : "";
-  const controls = pwField + (tool.options ? tool.options(info) : "");
+  // Offer result protection up front (not after processing), except where it makes no sense.
+  const canProtect = !["protect", "unlock"].includes(tool.id) && tool.result !== "images";
+  const protectSection = canProtect ? `
+    <div class="field protect-opt">
+      ${check("protect_result", "🔒 Protect the result with a password", false)}
+      <div id="protectResultFields" hidden>
+        <div class="two">
+          ${field("Password", passwordInput("result_pw", { id: "resultPw", autocomplete: "new-password", ui: true }))}
+          ${field("Repeat password", passwordInput("result_pw2", { id: "resultPw2", autocomplete: "new-password", ui: true }))}
+        </div>
+        <p class="hint">The downloaded file will need this password to open (AES-256).</p>
+      </div>
+    </div>` : "";
+  const controls = pwField + (tool.options ? tool.options(info) : "") + protectSection;
   $("options").innerHTML = tool.preview
     ? `<div class="opt-grid"><div class="preview" id="preview">
          <div class="pv-page" id="pvPage"><img id="pvImg" alt="Preview of page 1"><div class="pv-layer" id="pvLayer"></div></div>
@@ -534,6 +621,16 @@ function renderOptions() {
     const out = r.nextElementSibling;
     out.textContent = r.value + out.textContent.replace(/^[\d.]+/, "");
   }));
+  const uploadPw = $("options").querySelector('input[name="password"]');
+  if (uploadPw) uploadPw.addEventListener("change", () => { if (fileView === "grid") renderFileList(); });
+  const protectBox = $("options").querySelector('input[name="protect_result"]');
+  if (protectBox) {
+    protectBox.dataset.ui = "1";
+    protectBox.addEventListener("change", () => {
+      $("protectResultFields").hidden = !protectBox.checked;
+      if (protectBox.checked) $("resultPw").focus();
+    });
+  }
   tool.afterRender && tool.afterRender();
   if (tool.preview) initPreview();
 
@@ -552,8 +649,8 @@ function textWidth(text, weight = "") {
 
 async function initPreview() {
   preview.size = null;
-  const pw = $("password");
-  if (info.encrypted && !(pw && pw.value)) {
+  const pw = $("options").querySelector('input[name="password"]');
+  if (info.encrypted && !pwValue()) {
     $("pvNote").textContent = "Enter the password to see a preview.";
     $("pvPage").hidden = true;
     if (pw) pw.addEventListener("change", initPreview, { once: true });
@@ -564,7 +661,7 @@ async function initPreview() {
     fd.append("files", files[0]);
     fd.append("limit", "1");
     fd.append("width", "520");
-    if (pw) fd.append("password", pw.value);
+    fd.append("password", pwValue());
     const data = await (await postForm("/api/thumbnails", fd)).json();
     preview.size = data.sizes[0];
     $("pvImg").onload = () => { $("pvPage").hidden = false; updatePreview(); };
@@ -584,16 +681,16 @@ function updatePreview() {
 
 // ---------- page thumbnails (Select pages, Organize) ----------
 function withPages(onLoaded) {
-  const pw = $("password");
+  const pw = $("options").querySelector('input[name="password"]');
   const grid = $("pageGrid");
   const load = async () => {
-    if (info.encrypted && !pw.value) return showError("Enter the PDF password.");
+    if (info.encrypted && !pwValue()) return showError("Enter the PDF password.");
     showError("");
     grid.innerHTML = `<div class="pages-msg"><div class="spinner"></div>Loading pages…</div>`;
     try {
       const fd = new FormData();
       fd.append("files", files[0]);
-      if (pw) fd.append("password", pw.value);
+      fd.append("password", pwValue());
       const data = await (await postForm("/api/thumbnails", fd)).json();
       onLoaded(data.pages);
     } catch (e) {
@@ -627,12 +724,19 @@ function initPicker() {
   withPages((pages) => {
     picker.count = pages.length;
     $("pageGrid").innerHTML = pages.map((src, i) => `
-      <button type="button" class="page" data-n="${i + 1}" aria-pressed="false">
+      <div class="page" data-n="${i + 1}" role="checkbox" aria-checked="false" tabindex="0">
+        <button type="button" class="expand page-zoom" data-zoom="${i + 1}" title="Open a bigger preview" aria-label="Preview page ${i + 1}">⤢</button>
         <img src="${src}" alt="Page ${i + 1}" loading="lazy">
         <span class="page-no">${i + 1}</span>
         <span class="page-check">✓</span>
-      </button>`).join("");
-    $("pageGrid").querySelectorAll(".page").forEach((el) => el.addEventListener("click", (e) => {
+      </div>`).join("");
+    $("pageGrid").querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openPreview(0, +b.dataset.zoom);
+    }));
+    $("pageGrid").querySelectorAll(".page").forEach((el) => {
+      el.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); el.click(); } });
+      el.addEventListener("click", (e) => {
       const n = +el.dataset.n;
       if (e.shiftKey && picker.last) {
         const on = !picker.selected.has(n);
@@ -642,7 +746,8 @@ function initPicker() {
       }
       picker.last = n;
       syncPicker();
-    }));
+      });
+    });
     picker.selected = parsePageSpec($("pageSpec").value, picker.count);
     syncPicker(false);
   });
@@ -655,7 +760,7 @@ function syncPicker(updateText = true) {
   $("pageGrid").querySelectorAll(".page").forEach((el) => {
     const on = picker.selected.has(+el.dataset.n);
     el.classList.toggle("on", on);
-    el.setAttribute("aria-pressed", on);
+    el.setAttribute("aria-checked", on);
   });
   $("selCount").textContent = list.length
     ? `${list.length} of ${picker.count} page${picker.count === 1 ? "" : "s"} selected. Your new PDF will contain page${list.length === 1 ? "" : "s"} ${toPageSpec(list)}.`
@@ -709,6 +814,7 @@ function renderOrganizer() {
   const grid = $("pageGrid");
   grid.innerHTML = org.items.map((it, i) => `
     <div class="page org-page" draggable="true" data-i="${i}">
+      ${it.blank ? "" : `<button type="button" class="expand page-zoom" data-zoom="${it.page}" title="Open a bigger preview" aria-label="Preview page ${it.page}">⤢</button>`}
       <div class="org-thumb">
         ${it.blank ? '<div class="blank-page"></div>' : `<img src="${org.thumbs[it.page - 1]}" alt="Page ${it.page}" draggable="false">`}
       </div>
@@ -722,6 +828,10 @@ function renderOrganizer() {
       </div>
     </div>`).join("") || `<div class="pages-msg">No pages left. Click Reset to start over.</div>`;
 
+  grid.querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openPreview(0, +b.dataset.zoom);
+  }));
   grid.querySelectorAll(".org-page").forEach((card) => {
     const i = +card.dataset.i;
     const rot = org.items[i].rotate;
@@ -778,11 +888,71 @@ function renderOrganizer() {
   $("orgCount").textContent = `${org.items.length} page${org.items.length === 1 ? "" : "s"}${blanks ? `, including ${blanks} blank` : ""}`;
 }
 
+// ---------- expanded preview ----------
+const preview2 = { file: null, page: 1, total: 1, token: 0 };
+
+async function openPreview(index, page = 1) {
+  const f = files[index];
+  if (!f) return;
+  preview2.file = f;
+  preview2.page = page;
+  preview2.total = (fileInfo[index] || {}).pages || 1;
+  $("pvTitle").textContent = f.name;
+  $("previewModal").hidden = false;
+  await showPreviewPage();
+}
+
+async function showPreviewPage() {
+  const token = ++preview2.token;
+  const f = preview2.file;
+  $("pvError").hidden = true;
+  $("pvSpinner").hidden = false;
+  $("pvCount").textContent = `Page ${preview2.page} of ${preview2.total}`;
+  $("pvPrev").disabled = preview2.page <= 1;
+  $("pvNext").disabled = preview2.page >= preview2.total;
+  try {
+    const fd = new FormData();
+    fd.append("files", f);
+    fd.append("page", String(preview2.page));
+    fd.append("limit", "1");
+    fd.append("width", "1100");
+    fd.append("password", pwValue());
+    const data = await (await postForm("/api/thumbnails", fd)).json();
+    if (token !== preview2.token) return;
+    $("pvFull").src = data.pages[0];
+    $("pvFull").hidden = false;
+    preview2.total = data.total || preview2.total;
+    $("pvCount").textContent = `Page ${preview2.page} of ${preview2.total}`;
+    $("pvNext").disabled = preview2.page >= preview2.total;
+  } catch (e) {
+    if (token !== preview2.token) return;
+    $("pvFull").hidden = true;
+    $("pvError").textContent = e.message;
+    $("pvError").hidden = false;
+  } finally {
+    if (token === preview2.token) $("pvSpinner").hidden = true;
+  }
+}
+
+function closePreview() {
+  preview2.token++;
+  $("previewModal").hidden = true;
+  $("pvFull").removeAttribute("src");
+}
+
+function stepPreview(delta) {
+  const next = preview2.page + delta;
+  if (next < 1 || next > preview2.total) return;
+  preview2.page = next;
+  showPreviewPage();
+}
+
 // ---------- process ----------
 function collect() {
   const fd = new FormData();
   $("options").querySelectorAll("input, select").forEach((el) => {
-    if (!el.name || el.disabled || ((el.type === "radio" || el.type === "checkbox") && !el.checked)) return;
+    if (!el.name || el.disabled || el.dataset.ui === "1") return;
+    if ((el.type === "radio" || el.type === "checkbox") && !el.checked) return;
     fd.append(el.name, el.value);
   });
   return fd;
@@ -790,7 +960,11 @@ function collect() {
 
 async function run() {
   const fd = collect();
+  const wantProtect = !!$("options").querySelector('input[name="protect_result"]:checked');
+  const resultPw = wantProtect ? $("resultPw").value : "";
   const err = (info.encrypted && !tool.ownPassword && !fd.get("password") && "Enter the PDF password.")
+    || (wantProtect && !resultPw && "Enter the password for the result, or untick the protect box.")
+    || (wantProtect && resultPw !== $("resultPw2").value && "The result passwords don't match.")
     || (tool.validate && tool.validate(fd, info));
   if (err) return showError(err);
   fd.delete("confirm");
@@ -799,10 +973,20 @@ async function run() {
   $("workingMsg").textContent = files.length > 1 ? `Processing ${files.length} files…` : "Processing your file…";
   show("stepWorking");
   try {
-    const res = await postForm(tool.endpoint, fd);
-    const blob = await res.blob();
-    const name = filenameFrom(res) || "result.pdf";
+    let res = await postForm(tool.endpoint, fd);
+    let blob = await res.blob();
+    let name = filenameFrom(res) || "result.pdf";
     let extra = "";
+    if (wantProtect) {
+      $("workingMsg").textContent = "Adding the password…";
+      const pfd = new FormData();
+      pfd.append("files", blob, name);
+      pfd.append("new_password", resultPw);
+      res = await postForm("/api/protect", pfd);
+      blob = await res.blob();
+      name = filenameFrom(res) || name;
+      extra = " · 🔒 password protected";
+    }
     if (tool.id === "compress") {
       const inSize = files.reduce((s, f) => s + f.size, 0);
       const pct = Math.round((1 - blob.size / inSize) * 100);
@@ -813,7 +997,6 @@ async function run() {
       extra += " · open it in the desktop app to keep editing";
     }
     setResult(blob, name, extra);
-    resetProtectBox();
     renderContinue();
     show("stepDone");
   } catch (e) {
@@ -853,45 +1036,6 @@ function renderContinue() {
     pendingFiles = [new File([result.blob], result.name, { type: "application/pdf" })];
     location.hash = b.dataset.id;
   }));
-}
-
-// ---------- optional password on the result ----------
-function resetProtectBox() {
-  // Hidden for Protect (already has one) and for image results.
-  $("protectBox").hidden = tool.id === "protect" || tool.result === "images";
-  $("protectToggle").checked = false;
-  $("protectFields").hidden = true;
-  $("protectDone").hidden = true;
-  $("protectToggleRow").hidden = false;
-  $("resultPw").value = "";
-  $("resultPw2").value = "";
-  $("protectError").hidden = true;
-}
-
-async function protectResult() {
-  const pw = $("resultPw").value;
-  const fail = (msg) => { $("protectError").textContent = msg; $("protectError").hidden = false; };
-  if (!pw) return fail("Enter a password.");
-  if (pw !== $("resultPw2").value) return fail("The passwords don't match.");
-
-  const btn = $("protectApply");
-  btn.disabled = true;
-  btn.textContent = "Adding password…";
-  try {
-    const fd = new FormData();
-    fd.append("files", result.blob, result.name);
-    fd.append("new_password", pw);
-    const res = await postForm("/api/protect", fd);
-    setResult(await res.blob(), filenameFrom(res) || result.name, " · 🔒 password protected");
-    $("protectFields").hidden = true;
-    $("protectToggleRow").hidden = true;
-    $("protectDone").hidden = false;
-  } catch (e) {
-    fail(e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Add password";
-  }
 }
 
 // ---------- desktop app: download panel (website) and saving files (app) ----------
@@ -988,16 +1132,39 @@ $("againBtn").addEventListener("click", reset);
 $("backBtn").addEventListener("click", () => { location.hash = ""; });
 $("homeLink").addEventListener("click", (e) => { e.preventDefault(); location.hash = ""; });
 
-$("protectToggle").addEventListener("change", (e) => {
-  $("protectFields").hidden = !e.target.checked;
-  if (e.target.checked) $("resultPw").focus();
+
+$("viewSwitch").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-view]");
+  if (!b) return;
+  fileView = b.dataset.view;
+  localStorage.setItem("pdforge.fileView", fileView);
+  renderFileList();
 });
-$("protectApply").addEventListener("click", protectResult);
-$("protectFields").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); protectResult(); } });
+$("pvCloseBtn").addEventListener("click", closePreview);
+$("previewModal").addEventListener("click", (e) => { if (e.target === $("previewModal")) closePreview(); });
+$("pvPrev").addEventListener("click", () => stepPreview(-1));
+$("pvNext").addEventListener("click", () => stepPreview(1));
+// Show/hide for any password box.
+document.addEventListener("click", (e) => {
+  const eye = e.target.closest(".eye");
+  if (!eye) return;
+  const input = eye.previousElementSibling;
+  const show = input.type === "password";
+  input.type = show ? "text" : "password";
+  eye.classList.toggle("on", show);
+  eye.setAttribute("aria-label", show ? "Hide password" : "Show password");
+  eye.title = show ? "Hide password" : "Show password";
+});
 
 $("menuBtn").addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(); });
 document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) toggleMenu(false); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { toggleMenu(false); closeDownload(); } });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { toggleMenu(false); closeDownload(); closePreview(); }
+  if (!$("previewModal").hidden) {
+    if (e.key === "ArrowLeft") stepPreview(-1);
+    if (e.key === "ArrowRight") stepPreview(1);
+  }
+});
 window.addEventListener("hashchange", route);
 
 renderNav();

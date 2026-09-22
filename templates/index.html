@@ -49,7 +49,14 @@
 
     <!-- Step 2: options -->
     <div id="stepOptions" class="step card" hidden>
-      <ul class="filelist" id="fileList"></ul>
+      <div class="files-head" id="filesHead">
+        <span class="files-count" id="filesCount"></span>
+        <div class="view-switch" id="viewSwitch" role="group" aria-label="File view">
+          <button type="button" data-view="list" title="List view" aria-label="List view">☰</button>
+          <button type="button" data-view="grid" title="Grid view" aria-label="Grid view">▦</button>
+        </div>
+      </div>
+      <div class="filelist" id="fileList"></div>
       <button class="link left" id="addMoreBtn" hidden>+ Add more files</button>
       <div id="options"></div>
       <p class="error" id="errorMsg" role="alert" hidden></p>
@@ -73,26 +80,6 @@
       <a class="primary big" id="downloadBtn" download>Download</a>
       <p class="saved-note" id="savedNote" hidden></p>
 
-      <div class="protect-box" id="protectBox">
-        <label class="toggle" id="protectToggleRow">
-          <input type="checkbox" id="protectToggle">
-          <span>🔒 Password-protect this file before downloading</span>
-        </label>
-        <div id="protectFields" hidden>
-          <div class="field">
-            <label for="resultPw">Password</label>
-            <input type="password" id="resultPw" autocomplete="new-password">
-          </div>
-          <div class="field">
-            <label for="resultPw2">Repeat password</label>
-            <input type="password" id="resultPw2" autocomplete="new-password">
-          </div>
-          <p class="error" id="protectError" hidden></p>
-          <button class="primary" id="protectApply">Add password</button>
-        </div>
-        <p class="protect-done" id="protectDone" hidden>🔒 Password added. The download button above now gives you the protected file.</p>
-      </div>
-
       <div class="continue" id="continueBox" hidden>
         <p class="continue-title">Continue with this file</p>
         <div class="continue-list" id="continueList"></div>
@@ -109,6 +96,26 @@
   For bigger files, <button class="link inline" data-open-download>get the free desktop app</button>.{% endif %}</span>
   <span class="desktop-only">pdforge desktop · Your files never leave this computer.</span>
 </footer>
+
+<!-- Expanded PDF preview -->
+<div class="modal-backdrop" id="previewModal" hidden>
+  <div class="modal preview-modal" role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+    <div class="preview-head">
+      <span class="preview-name" id="pvTitle"></span>
+      <button class="modal-close" id="pvCloseBtn" aria-label="Close">✕</button>
+    </div>
+    <div class="preview-stage" id="pvStage">
+      <img id="pvFull" alt="">
+      <div class="spinner" id="pvSpinner" hidden></div>
+      <p class="pv-error" id="pvError" hidden></p>
+    </div>
+    <div class="preview-bar">
+      <button class="ghost sm" id="pvPrev" aria-label="Previous page">‹</button>
+      <span id="pvCount" class="muted"></span>
+      <button class="ghost sm" id="pvNext" aria-label="Next page">›</button>
+    </div>
+  </div>
+</div>
 
 <!-- Desktop app download panel (website only) -->
 <div class="modal-backdrop" id="downloadModal" hidden>

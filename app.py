@@ -296,7 +296,8 @@ def thumbnails():
     """
     f = pdf_files()[0]
     limit = int(request.form.get("limit") or 0)
-    width = int(form_float("width", THUMB_WIDTH, 60, 800))
+    only = int(request.form.get("page") or 0)  # 1-based; 0 = from the first page
+    width = int(form_float("width", THUMB_WIDTH, 60, 1400))
     try:
         doc = pdfium.PdfDocument(f.read(), password=form_password() or None)
     except pdfium.PdfiumError:
@@ -304,9 +305,11 @@ def thumbnails():
             raise ToolError("Incorrect password. Please try again.")
         raise ToolError(f"Couldn't open '{f.filename}'. Is it a password-protected or damaged PDF?")
     pages, sizes = [], []
+    total = len(doc)
     try:
-        count = min(limit, len(doc)) if limit else len(doc)
-        for i in range(count):
+        start = max(0, only - 1)
+        count = min(start + limit, total) if limit else total
+        for i in range(start, count):
             page = doc[i]
             w, h = page.get_size()  # already accounts for /Rotate
             img = page.render(scale=width / (w or 1)).to_pil().convert("RGB")
@@ -317,7 +320,7 @@ def thumbnails():
             page.close()
     finally:
         doc.close()
-    return jsonify(pages=pages, sizes=sizes)
+    return jsonify(pages=pages, sizes=sizes, total=total)
 
 
 # ---------- routes: security ----------

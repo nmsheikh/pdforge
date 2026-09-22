@@ -298,12 +298,15 @@ async function inspect(fd) {
 async function thumbnails(fd) {
   const f = pdfFiles(fd)[0];
   const limit = parseInt(str(fd, "limit", "0"), 10) || 0;
-  const width = num(fd, "width", THUMB_WIDTH, 60, 800);
+  const only = parseInt(str(fd, "page", "0"), 10) || 0; // 1-based; 0 = from the first page
+  const width = num(fd, "width", THUMB_WIDTH, 60, 1400);
   const doc = await openPdfjs(f, str(fd, "password"));
   const pages = [], sizes = [];
+  let total = 0;
   try {
-    const count = limit ? Math.min(limit, doc.numPages) : doc.numPages;
-    for (let i = 1; i <= count; i++) {
+    const start = Math.max(1, only);
+    const count = limit ? Math.min(start + limit - 1, doc.numPages) : doc.numPages;
+    for (let i = start; i <= count; i++) {
       const page = await doc.getPage(i);
       const base = page.getViewport({ scale: 1 }); // already accounts for /Rotate
       const canvas = await renderPage(page, width / base.width);
@@ -312,9 +315,10 @@ async function thumbnails(fd) {
       page.cleanup();
     }
   } finally {
+    total = doc.numPages;
     closePdfjs(doc);
   }
-  return json({ pages, sizes });
+  return json({ pages, sizes, total });
 }
 
 // ---------- security ----------
