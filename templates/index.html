@@ -37,7 +37,7 @@
 
   <!-- Tool workspace -->
   <section id="workspace" hidden>
-    <button class="back" id="backBtn">← All tools</button>
+    <button class="back" id="backBtn"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg> All tools</button>
     <h1 id="toolTitle"></h1>
     <p class="lead" id="toolDesc"></p>
 
@@ -55,8 +55,8 @@
       <div class="files-head" id="filesHead">
         <span class="files-count" id="filesCount"></span>
         <div class="view-switch" id="viewSwitch" role="group" aria-label="File view">
-          <button type="button" data-view="list" title="List view" aria-label="List view">☰</button>
-          <button type="button" data-view="grid" title="Grid view" aria-label="Grid view">▦</button>
+          <button type="button" data-view="list" title="List view" aria-label="List view"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></button>
+          <button type="button" data-view="grid" title="Grid view" aria-label="Grid view"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></button>
         </div>
       </div>
       <div class="filelist" id="fileList"></div>
@@ -76,16 +76,12 @@
 
     <!-- Step 4: done -->
     <div id="stepDone" class="step card center" hidden>
-      <div class="check">✓</div>
+      <div class="check"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
       <h2>Your file is ready</h2>
       <p class="muted" id="doneMeta"></p>
       <a class="primary big" id="downloadBtn" download>Download</a>
       <p class="saved-note" id="savedNote" hidden></p>
 
-      <div class="continue" id="continueBox" hidden>
-        <p class="continue-title">Continue with this file</p>
-        <div class="continue-list" id="continueList"></div>
-      </div>
 
       <button class="link" id="againBtn">Process another file</button>
     </div>
@@ -104,7 +100,7 @@
   <div class="modal preview-modal" role="dialog" aria-modal="true" aria-labelledby="pvTitle">
     <div class="preview-head">
       <span class="preview-name" id="pvTitle"></span>
-      <button class="modal-close" id="pvCloseBtn" aria-label="Close">✕</button>
+      <button class="modal-close" id="pvCloseBtn" aria-label="Close"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
     <div class="preview-stage" id="pvStage">
       <img id="pvFull" alt="">
@@ -112,9 +108,9 @@
       <p class="pv-error" id="pvError" hidden></p>
     </div>
     <div class="preview-bar">
-      <button class="ghost sm" id="pvPrev" aria-label="Previous page">‹</button>
+      <button class="ghost sm" id="pvPrev" aria-label="Previous page"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
       <span id="pvCount" class="muted"></span>
-      <button class="ghost sm" id="pvNext" aria-label="Next page">›</button>
+      <button class="ghost sm" id="pvNext" aria-label="Next page"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
     </div>
   </div>
 </div>
@@ -122,7 +118,7 @@
 <!-- Desktop app download panel (website only) -->
 <div class="modal-backdrop" id="downloadModal" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dlTitle">
-    <button class="modal-close" id="dlClose" aria-label="Close">✕</button>
+    <button class="modal-close" id="dlClose" aria-label="Close"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     <p class="dl-reason" id="dlReason" hidden></p>
     <h2 id="dlTitle">Get pdforge for your computer</h2>
     <div class="dl-phone" id="dlPhone" hidden>

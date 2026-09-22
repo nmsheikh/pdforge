@@ -25,6 +25,25 @@ const ICONS = {
   metadata: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/>',
   unlock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
   protect: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  // interface controls
+  arrowUp: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+  arrowDown: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  arrowLeft: '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
+  arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  arrowUpLeft: '<path d="M7 17V7h10"/><path d="M17 17 7 7"/>',
+  arrowUpRight: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  arrowDownLeft: '<path d="M17 7 7 17"/><path d="M17 17H7V7"/>',
+  arrowDownRight: '<path d="m7 7 10 10"/><path d="M17 7v10H7"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  expand: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  rotateCcw: '<path d="M3 12a9 9 0 1 0 9-9c-2.52 0-4.93 1-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  listView: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
+  gridView: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
   eye: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
   eyeOff: '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="m2 2 20 20"/>',
 };
@@ -216,8 +235,8 @@ const TOOLS = [
     endpoint: "/api/page-numbers", multiple: true, preview: true, button: "Add page numbers",
     options: () => `
       ${field("Position", seg("position", [
-        ["top-left", "↖"], ["top-center", "↑"], ["top-right", "↗"],
-        ["bottom-left", "↙"], ["bottom-center", "↓"], ["bottom-right", "↘"],
+        ["top-left", icon("arrowUpLeft", "ui")], ["top-center", icon("arrowUp", "ui")], ["top-right", icon("arrowUpRight", "ui")],
+        ["bottom-left", icon("arrowDownLeft", "ui")], ["bottom-center", icon("arrowDown", "ui")], ["bottom-right", icon("arrowDownRight", "ui")],
       ], "bottom-center", "grid3"))}
       ${field("Format", `<select name="format">
         <option value="n">1</option><option value="page_n">Page 1</option>
@@ -506,10 +525,11 @@ const thumbCache = new Map(); // File -> page 1 data URL
 
 function fileActions(i) {
   if (!tool.multiple) return "";
+  const grid = fileView === "grid";
   return `${tool.ordered ? `
-      <button class="mini" data-act="up" data-i="${i}" title="Move ${fileView === "grid" ? "left" : "up"}" ${i === 0 ? "disabled" : ""}>${fileView === "grid" ? "←" : "↑"}</button>
-      <button class="mini" data-act="down" data-i="${i}" title="Move ${fileView === "grid" ? "right" : "down"}" ${i === files.length - 1 ? "disabled" : ""}>${fileView === "grid" ? "→" : "↓"}</button>` : ""}
-    <button class="mini" data-act="del" data-i="${i}" title="Remove">✕</button>`;
+      <button class="mini" data-act="up" data-i="${i}" title="Move ${grid ? "left" : "up"}" aria-label="Move ${grid ? "left" : "up"}" ${i === 0 ? "disabled" : ""}>${icon(grid ? "arrowLeft" : "arrowUp", "ui")}</button>
+      <button class="mini" data-act="down" data-i="${i}" title="Move ${grid ? "right" : "down"}" aria-label="Move ${grid ? "right" : "down"}" ${i === files.length - 1 ? "disabled" : ""}>${icon(grid ? "arrowRight" : "arrowDown", "ui")}</button>` : ""}
+    <button class="mini" data-act="del" data-i="${i}" title="Remove" aria-label="Remove">${icon("close", "ui")}</button>`;
 }
 
 function renderFileList() {
@@ -520,7 +540,7 @@ function renderFileList() {
     const fi = fileInfo[i] || {};
     const pages = fi.pages ? `${fi.pages} page${fi.pages === 1 ? "" : "s"}` : "";
     const lock = fi.encrypted ? `<span class="badge">${icon("protect", "badge-icon")} Protected</span>` : "";
-    const expand = pdfs ? `<button class="expand" data-expand="${i}" title="Open a bigger preview" aria-label="Open a bigger preview of ${esc(f.name)}">⤢</button>` : "";
+    const expand = pdfs ? `<button class="expand" data-expand="${i}" title="Open a bigger preview" aria-label="Open a bigger preview of ${esc(f.name)}">${icon("expand", "ui")}</button>` : "";
     if (fileView === "grid") {
       return `<div class="file-card">
         ${expand}
@@ -543,7 +563,7 @@ function renderFileList() {
     </div>`;
   }).join("") + (tool.multiple ? `
     <button type="button" class="add-tile" id="addTile">
-      <span class="add-plus">+</span>
+      <span class="add-plus">${icon("plus", "ui")}</span>
       <span>Add more ${tool.accept ? "images" : "PDFs"}</span>
     </button>` : "");
 
@@ -638,10 +658,10 @@ function renderOptions() {
     ? `<div class="opt-grid"><div class="preview" id="preview">
          <div class="pv-page" id="pvPage"><img id="pvImg" alt="Page preview"><div class="pv-layer" id="pvLayer"></div></div>
          <div class="pv-bar" id="pvBar" hidden>
-           <button type="button" class="ghost sm" id="pvPagePrev" aria-label="Previous page">‹</button>
+           <button type="button" class="ghost sm" id="pvPagePrev" aria-label="Previous page">${icon("chevronLeft", "ui")}</button>
            <span class="pv-label" id="pvPageLabel"></span>
-           <button type="button" class="ghost sm" id="pvPageNext" aria-label="Next page">›</button>
-           <button type="button" class="ghost sm" id="pvPageBig" title="Open a bigger preview">⤢</button>
+           <button type="button" class="ghost sm" id="pvPageNext" aria-label="Next page">${icon("chevronRight", "ui")}</button>
+           <button type="button" class="ghost sm" id="pvPageBig" title="Open a bigger preview" aria-label="Open a bigger preview">${icon("expand", "ui")}</button>
          </div>
          <p class="hint center" id="pvNote">Loading preview…</p></div>
        <div class="controls">${controls}</div></div>`
@@ -784,10 +804,10 @@ function initPicker() {
     picker.count = pages.length;
     $("pageGrid").innerHTML = pages.map((src, i) => `
       <div class="page" data-n="${i + 1}" role="checkbox" aria-checked="false" tabindex="0">
-        <button type="button" class="expand page-zoom" data-zoom="${i + 1}" title="Open a bigger preview" aria-label="Preview page ${i + 1}">⤢</button>
+        <button type="button" class="expand page-zoom" data-zoom="${i + 1}" title="Open a bigger preview" aria-label="Preview page ${i + 1}">${icon("expand", "ui")}</button>
         <img src="${src}" alt="Page ${i + 1}" loading="lazy">
         <span class="page-no">${i + 1}</span>
-        <span class="page-check">✓</span>
+        <span class="page-check">${icon("check", "ui")}</span>
       </div>`).join("");
     $("pageGrid").querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -873,17 +893,17 @@ function renderOrganizer() {
   const grid = $("pageGrid");
   grid.innerHTML = org.items.map((it, i) => `
     <div class="page org-page" draggable="true" data-i="${i}">
-      ${it.blank ? "" : `<button type="button" class="expand page-zoom" data-zoom="${it.page}" title="Open a bigger preview" aria-label="Preview page ${it.page}">⤢</button>`}
+      ${it.blank ? "" : `<button type="button" class="expand page-zoom" data-zoom="${it.page}" title="Open a bigger preview" aria-label="Preview page ${it.page}">${icon("expand", "ui")}</button>`}
       <div class="org-thumb">
         ${it.blank ? '<div class="blank-page"></div>' : `<img src="${org.thumbs[it.page - 1]}" alt="Page ${it.page}" draggable="false">`}
       </div>
       <span class="page-no">${it.blank ? "Blank" : it.page}</span>
       <div class="org-tools">
-        <button type="button" data-act="left" title="Move left" ${i === 0 ? "disabled" : ""}>←</button>
-        <button type="button" data-act="ccw" title="Rotate left">↺</button>
-        <button type="button" data-act="cw" title="Rotate right">↻</button>
-        <button type="button" data-act="del" title="Delete page">✕</button>
-        <button type="button" data-act="right" title="Move right" ${i === org.items.length - 1 ? "disabled" : ""}>→</button>
+        <button type="button" data-act="left" title="Move left" aria-label="Move left" ${i === 0 ? "disabled" : ""}>${icon("arrowLeft", "ui")}</button>
+        <button type="button" data-act="ccw" title="Rotate left" aria-label="Rotate left">${icon("rotateCcw", "ui")}</button>
+        <button type="button" data-act="cw" title="Rotate right" aria-label="Rotate right">${icon("rotate", "ui")}</button>
+        <button type="button" data-act="del" title="Delete page" aria-label="Delete page">${icon("trash", "ui")}</button>
+        <button type="button" data-act="right" title="Move right" aria-label="Move right" ${i === org.items.length - 1 ? "disabled" : ""}>${icon("arrowRight", "ui")}</button>
       </div>
     </div>`).join("") || `<div class="pages-msg">No pages left. Click Reset to start over.</div>`;
 
@@ -1058,7 +1078,6 @@ async function run() {
       extra += " · open it in the desktop app to keep editing";
     }
     setResult(blob, name, extra);
-    renderContinue();
     show("stepDone");
   } catch (e) {
     show("stepOptions");
@@ -1084,19 +1103,6 @@ function filenameFrom(res) {
   if (star) return decodeURIComponent(star[1]);
   const plain = cd.match(/filename="?([^";]+)"?/i);
   return plain ? plain[1] : null;
-}
-
-// "Continue with…": hand the result straight to another tool.
-function renderContinue() {
-  const isPdfResult = /\.pdf$/i.test(result.name);
-  $("continueBox").hidden = !isPdfResult;
-  if (!isPdfResult) return;
-  $("continueList").innerHTML = TOOLS.filter((t) => !t.accept && t.id !== tool.id).map((t) =>
-    `<button class="continue-chip cat-${t.category}" data-id="${t.id}">${icon(t.id, "mi")}<span>${esc(t.title)}</span></button>`).join("");
-  $("continueList").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
-    pendingFiles = [new File([result.blob], result.name, { type: "application/pdf" })];
-    location.hash = b.dataset.id;
-  }));
 }
 
 // ---------- desktop app: download panel (website) and saving files (app) ----------

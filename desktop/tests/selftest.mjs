@@ -155,10 +155,15 @@ async function runUi() {
   check("UI: watermark live preview", previewOk);
   await run();
   check("UI: watermark result ready", await until(() => !document.getElementById("stepDone").hidden), document.getElementById("doneMeta").textContent);
-  check("UI: continue-with chips", document.querySelectorAll("#continueList button").length === 13);
+  check("UI: result screen offers only the download", !document.getElementById("continueBox"));
+  check("UI: controls use the icon set, not text glyphs",
+    !/[\u2715\u2922\u2630\u25a6\u2039\u203a\u21ba\u21bb]/.test(document.body.innerText));
 
-  document.querySelector('#continueList [data-id="organize"]').click();
-  check("UI: organize page grid", await until(() => document.querySelectorAll("#pageGrid .org-page").length === 3));
+  location.hash = "organize";
+  await wait(200);
+  await addFiles([asFile(await makePdf(3), "pages.pdf")]);
+  check("UI: organize page grid", await until(() => document.querySelectorAll("#pageGrid .org-page").length === 3, 20000));
+  check("UI: organize controls are icons", document.querySelectorAll(".org-tools svg.ui").length >= 5);
 
   location.hash = "compress";
   await wait(200);

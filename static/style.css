@@ -189,7 +189,8 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 
 
 /* ---------- Workspace ---------- */
-.back { background: none; border: none; color: var(--muted); cursor: pointer; font: inherit; font-size: 14px; padding: 0; }
+.back { display: inline-flex; align-items: center; gap: 7px; background: none; border: none; color: var(--muted); cursor: pointer; font: inherit; font-size: 14px; padding: 0; }
+.back .ui { width: 14px; height: 14px; }
 .back:hover { color: var(--text); }
 .step { max-width: 660px; margin: 0 auto; }
 .step.wide { max-width: 1000px; }
@@ -216,8 +217,9 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .view-switch { display: flex; gap: 2px; padding: 3px; background: var(--surface-2); border-radius: var(--pill); flex: none; }
 .view-switch button {
   width: 30px; height: 26px; border: none; border-radius: var(--pill); background: none; color: var(--muted);
-  cursor: pointer; font-size: 13px; line-height: 1;
+  cursor: pointer; display: grid; place-items: center;
 }
+.view-switch .ui { width: 15px; height: 15px; }
 .view-switch button:hover { color: var(--text); }
 .view-switch button.on { background: var(--surface); color: var(--accent); box-shadow: 0 1px 3px rgba(28, 26, 23, .1); }
 
@@ -230,9 +232,10 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
   transition: border-color .12s, color .12s, background .12s;
 }
 .add-tile:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.add-plus { font-size: 19px; line-height: 1; font-weight: 400; }
+.add-plus { display: grid; place-items: center; }
+.add-plus .ui { width: 17px; height: 17px; }
 .filelist.grid .add-tile { flex-direction: column; gap: 6px; min-height: 100%; padding: 22px 12px; }
-.filelist.grid .add-plus { font-size: 26px; }
+.filelist.grid .add-plus .ui { width: 24px; height: 24px; }
 .filelist.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
 @media (max-width: 600px) { .filelist.grid { grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 10px; } }
 .file-row, .file-card { position: relative; background: var(--surface-2); border-radius: var(--radius-sm); }
@@ -251,17 +254,22 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .file-actions { display: flex; gap: 4px; }
 .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 15px; }
 .fsize { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+/* One icon size for every interface control. */
+.ui { width: 15px; height: 15px; display: block; }
 .mini {
+  display: grid; place-items: center;
   background: var(--surface); border: none; border-radius: var(--pill); color: var(--muted);
-  cursor: pointer; width: 28px; height: 28px; flex: none; font-size: 13px;
+  cursor: pointer; width: 28px; height: 28px; flex: none;
 }
+.mini .ui { width: 14px; height: 14px; }
 .mini:hover { color: var(--accent); }
 .mini:disabled { opacity: .3; cursor: default; }
 .expand {
   position: absolute; top: 7px; right: 7px; z-index: 2; width: 26px; height: 26px; border-radius: var(--pill);
-  border: none; background: var(--surface); color: var(--muted); cursor: pointer; font-size: 12px; line-height: 1;
-  box-shadow: 0 1px 4px rgba(28, 26, 23, .16);
+  border: none; background: var(--surface); color: var(--muted); cursor: pointer;
+  display: grid; place-items: center; box-shadow: 0 1px 4px rgba(28, 26, 23, .16);
 }
+.expand .ui { width: 13px; height: 13px; }
 .expand:hover { color: var(--accent); }
 .file-row .expand { position: static; order: -1; box-shadow: none; background: var(--surface); }
 @media (max-width: 600px) { .file-row .fsize { display: none; } }
@@ -317,7 +325,8 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .seg.wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
 .seg.wrap label { min-width: 0; }
 .seg.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); max-width: 220px; }
-.seg.grid3 label { min-width: 0; font-size: 17px; padding: 7px; }
+.seg.grid3 label { min-width: 0; padding: 9px; }
+.seg.grid3 .ui { width: 16px; height: 16px; margin: 0 auto; }
 
 .range { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .range input { flex: 1; min-width: 0; accent-color: var(--accent); }
@@ -354,8 +363,9 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 @keyframes spin { to { transform: rotate(360deg); } }
 .check {
   width: 62px; height: 62px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center;
-  background: var(--ok-soft); color: var(--ok); font-size: 30px; font-weight: 500;
+  background: var(--ok-soft); color: var(--ok);
 }
+.check svg { width: 28px; height: 28px; }
 
 /* ---------- Options with live preview ---------- */
 .opt-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; align-items: start; }
@@ -368,7 +378,8 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 }
 .pv-page img { display: block; width: 100%; height: auto; }
 .pv-bar { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
-.pv-bar button { padding: 5px 12px; font-size: 14px; line-height: 1; }
+.pv-bar button { padding: 6px 12px; display: grid; place-items: center; }
+.pv-bar .ui { width: 15px; height: 15px; }
 .pv-bar .pv-label { font-size: 12.5px; color: var(--muted); min-width: 96px; text-align: center; }
 .pv-layer { position: absolute; inset: 0; pointer-events: none; font-family: Helvetica, Arial, sans-serif; }
 .pv-text { position: absolute; white-space: nowrap; line-height: 1; }
@@ -403,8 +414,9 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .page-no { position: absolute; left: 0; right: 0; bottom: 7px; font-size: 12.5px; font-weight: 600; color: var(--muted); text-align: center; }
 .page-check {
   position: absolute; top: 12px; right: 12px; width: 25px; height: 25px; border-radius: 50%;
-  background: var(--accent); color: #fff; font-weight: 600; display: none; place-items: center; font-size: 13px;
+  background: var(--accent); color: #fff; display: none; place-items: center;
 }
+.page-check .ui { width: 14px; height: 14px; }
 .page.on { border-color: var(--accent); background: var(--accent-soft); }
 .page.on .page-no { color: var(--accent); }
 .page.on .page-check { display: grid; }
@@ -429,21 +441,14 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .org-page:hover .org-tools, .org-page.show-tools .org-tools, .org-page:focus-within .org-tools { opacity: 1; }
 .org-tools button {
   width: 24px; height: 24px; padding: 0; border: none; border-radius: var(--pill); cursor: pointer;
-  background: rgba(28, 26, 23, .78); color: #fff; font-size: 12px; line-height: 24px;
+  background: rgba(28, 26, 23, .78); color: #fff; display: grid; place-items: center;
 }
+.org-tools .ui { width: 12px; height: 12px; }
 .org-tools button:hover { background: var(--accent); }
 .org-tools button:disabled { opacity: .3; cursor: default; background: rgba(28, 26, 23, .78); }
 @media (hover: none) { .org-tools { opacity: 1; } }
 
 /* ---------- Result ---------- */
-.continue { margin: 26px auto 6px; max-width: 640px; }
-.continue-title { margin: 0 0 12px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
-.continue-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-.continue-chip {
-  display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: var(--pill); cursor: pointer;
-  font: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); background: var(--surface-2); border: 1px solid transparent;
-}
-.continue-chip:hover { color: var(--accent); border-color: var(--accent); }
 .saved-note { margin: 0 0 6px; font-size: 14px; color: var(--ok); font-weight: 600; word-break: break-all; }
 
 /* ---------- Modals: download panel and expanded preview ---------- */
@@ -461,6 +466,7 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
   position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border: none; border-radius: var(--pill);
   background: var(--surface-2); color: var(--muted); cursor: pointer; font-size: 14px;
 }
+.modal-close { display: grid; place-items: center; }
 .modal-close:hover { color: var(--text); }
 .dl-reason { margin: 0 0 14px; padding: 12px 15px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: 14.5px; }
 .dl-perks { margin: 0 0 20px; padding-left: 20px; color: var(--muted); font-size: 14.5px; }
@@ -495,7 +501,8 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .preview-stage .spinner { position: absolute; }
 .pv-error { color: var(--accent); font-weight: 600; text-align: center; }
 .preview-bar { display: flex; align-items: center; justify-content: center; gap: 14px; }
-.preview-bar button { min-width: 44px; font-size: 17px; line-height: 1; }
+.preview-bar button { min-width: 44px; display: grid; place-items: center; }
+.preview-bar .ui { width: 18px; height: 18px; }
 .preview-bar button:disabled { opacity: .35; cursor: default; }
 
 /* ---------- Download app button / phone nudge ---------- */
