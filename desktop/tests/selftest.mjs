@@ -160,6 +160,33 @@ async function runUi() {
   await addFiles([asFile(await makePdf(1, { withPhoto: true }), "scan.pdf")]);
   await run();
   check("UI: compress result", await until(() => !document.getElementById("stepDone").hidden), document.getElementById("doneMeta").textContent);
+  // New in 3.0.1: file views, expanded preview, password asked up front.
+  location.hash = "merge";
+  await wait(200);
+  await addFiles([asFile(await makePdf(4), "a.pdf"), asFile(await makePdf(2), "b.pdf")]);
+  await until(() => document.querySelectorAll("#fileList .file-row").length === 2 || document.querySelectorAll("#fileList .file-card").length === 2);
+  document.querySelector('[data-view="grid"]').click();
+  check("UI: grid view thumbnails", await until(() => document.querySelectorAll(".file-thumb img").length === 2, 20000));
+
+  document.querySelector('[data-expand="1"]').click();
+  check("UI: expanded preview opens", await until(() => document.getElementById("pvFull").naturalWidth > 400, 20000), document.getElementById("pvCount").textContent);
+  document.getElementById("pvNext").click();
+  check("UI: preview page navigation", await until(() => document.getElementById("pvCount").textContent === "Page 2 of 2", 20000));
+  closePreview();
+
+  document.querySelector('input[name="protect_result"]').click();
+  document.getElementById("resultPw").value = "pw1234";
+  document.getElementById("resultPw2").value = "nope";
+  await run();
+  check("UI: mismatched result passwords rejected", document.getElementById("errorMsg").textContent.includes("don't match"));
+  document.getElementById("resultPw2").value = "pw1234";
+  await run();
+  const ready = await until(() => !document.getElementById("stepDone").hidden, 30000);
+  let opensWithoutPw = true;
+  try { await PDFDocument.load(new Uint8Array(await result.blob.arrayBuffer())); } catch (_) { opensWithoutPw = false; }
+  check("UI: result protected with the password asked up front", ready && !opensWithoutPw, document.getElementById("doneMeta").textContent);
+  check("UI: no password box on the result screen", !document.getElementById("protectBox"));
+
   check("UI: no JavaScript errors", errors.length === 0, errors.join(" | "));
 }
 

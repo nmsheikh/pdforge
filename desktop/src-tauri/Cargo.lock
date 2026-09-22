@@ -2159,7 +2159,7 @@ dependencies = [
 
 [[package]]
 name = "pdforge"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "tauri",
  "tauri-build",
