@@ -25,6 +25,8 @@ const ICONS = {
   metadata: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/>',
   unlock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
   protect: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  eye: '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="m2 2 20 20"/>',
 };
 const icon = (name, cls = "") =>
   `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -58,7 +60,7 @@ function range(name, min, max, value, unit) {
 function passwordInput(name, { id = "", autocomplete = "off", ui = false } = {}) {
   return `<div class="pw-wrap">
     <input type="password" name="${name}"${id ? ` id="${id}"` : ""} autocomplete="${autocomplete}"${ui ? ' data-ui="1"' : ""}>
-    <button type="button" class="eye" aria-label="Show password" title="Show password">👁</button>
+    <button type="button" class="eye" aria-label="Show password" title="Show password">${icon("eye", "eye-icon")}</button>
   </div>`;
 }
 
@@ -315,7 +317,6 @@ const TOOLS = [
         ${field("New password", passwordInput("new_password", { autocomplete: "new-password" }))}
         ${field("Repeat new password", passwordInput("confirm", { autocomplete: "new-password" }))}
       </div>
-      <p class="hint">Encrypted with AES-256.</p>
       <div class="field"><label>Restrictions <span class="muted">(optional)</span></label>
         ${check("block_print", "Block printing")}
         ${check("block_copy", "Block copying text and images")}
@@ -518,7 +519,7 @@ function renderFileList() {
   list.innerHTML = files.map((f, i) => {
     const fi = fileInfo[i] || {};
     const pages = fi.pages ? `${fi.pages} page${fi.pages === 1 ? "" : "s"}` : "";
-    const lock = fi.encrypted ? '<span class="badge">🔒 Protected</span>' : "";
+    const lock = fi.encrypted ? `<span class="badge">${icon("protect", "badge-icon")} Protected</span>` : "";
     const expand = pdfs ? `<button class="expand" data-expand="${i}" title="Open a bigger preview" aria-label="Open a bigger preview of ${esc(f.name)}">⤢</button>` : "";
     if (fileView === "grid") {
       return `<div class="file-card">
@@ -540,8 +541,13 @@ function renderFileList() {
       <span class="fsize">${fmtSize(f.size)}</span>
       ${fileActions(i)}
     </div>`;
-  }).join("");
+  }).join("") + (tool.multiple ? `
+    <button type="button" class="add-tile" id="addTile">
+      <span class="add-plus">+</span>
+      <span>Add more ${tool.accept ? "images" : "PDFs"}</span>
+    </button>` : "");
 
+  $("addTile")?.addEventListener("click", pickMoreFiles);
   list.querySelectorAll(".mini").forEach((b) => b.addEventListener("click", () => {
     const i = +b.dataset.i;
     const wasEncrypted = info.encrypted;
@@ -562,7 +568,6 @@ function renderFileList() {
   $("filesHead").hidden = !pdfs && files.length < 2;
   $("viewSwitch").hidden = files.length < 2;
   $("viewSwitch").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.view === fileView));
-  $("addMoreBtn").hidden = !tool.multiple;
   if (fileView === "grid" && pdfs) loadFileThumbs();
 }
 
@@ -615,13 +620,13 @@ function renderOptions() {
   const canProtect = !["protect", "unlock"].includes(tool.id) && tool.result !== "images";
   const protectSection = canProtect ? `
     <div class="field protect-opt">
-      ${check("protect_result", "🔒 Protect the result with a password", false)}
+      ${check("protect_result", `${icon("protect", "check-icon")} Protect the result with a password`, false)}
       <div id="protectResultFields" hidden>
         <div class="two">
           ${field("Password", passwordInput("result_pw", { id: "resultPw", autocomplete: "new-password", ui: true }))}
           ${field("Repeat password", passwordInput("result_pw2", { id: "resultPw2", autocomplete: "new-password", ui: true }))}
         </div>
-        <p class="hint">The downloaded file will need this password to open (AES-256).</p>
+        <p class="hint">The file you download will ask for this password when it is opened.</p>
       </div>
     </div>` : "";
   // When a tool can't run on these files, show only the reason - no options to fiddle with.
@@ -1041,7 +1046,7 @@ async function run() {
       res = await postForm("/api/protect", pfd);
       blob = await res.blob();
       name = filenameFrom(res) || name;
-      extra = " · 🔒 password protected";
+      extra = " · password protected";
     }
     if (tool.id === "compress") {
       const inSize = files.reduce((s, f) => s + f.size, 0);
@@ -1168,14 +1173,14 @@ const dz = $("dropzone");
 ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
 dz.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
 
-$("addMoreBtn").addEventListener("click", () => {
+function pickMoreFiles() {
   const input = document.createElement("input");
   input.type = "file";
   input.multiple = true;
   input.accept = $("fileInput").accept;
   input.addEventListener("change", () => addFiles(input.files));
   input.click();
-});
+}
 $("runBtn").addEventListener("click", run);
 $("options").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.target.matches("input:not([type=checkbox]):not([type=radio])")) { e.preventDefault(); run(); }
@@ -1208,6 +1213,7 @@ document.addEventListener("click", (e) => {
   const show = input.type === "password";
   input.type = show ? "text" : "password";
   eye.classList.toggle("on", show);
+  eye.innerHTML = icon(show ? "eyeOff" : "eye", "eye-icon");
   eye.setAttribute("aria-label", show ? "Hide password" : "Show password");
   eye.title = show ? "Hide password" : "Show password";
 });
