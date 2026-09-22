@@ -1,0 +1,4 @@
+flask>=3.0
+pikepdf>=9.0
+pillow>=10.0
+pypdfium2>=4.0

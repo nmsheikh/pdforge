@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDFKit</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <a href="#" class="brand" id="homeLink">
+    <span class="logo">PDF</span><span>Kit</span>
+  </a>
+  <span class="tagline">Every PDF tool you need. Files never leave memory.</span>
+</header>
+
+<main>
+  <!-- Home: tool grid -->
+  <section id="home">
+    <h1>Every tool you need to work with PDFs</h1>
+    <p class="lead">Pick a tool, drop your file, download the result.</p>
+    <div class="grid" id="toolGrid"></div>
+  </section>
+
+  <!-- Tool workspace -->
+  <section id="workspace" hidden>
+    <button class="back" id="backBtn">← All tools</button>
+    <h1 id="toolTitle"></h1>
+    <p class="lead" id="toolDesc"></p>
+
+    <!-- Step 1: upload -->
+    <div id="stepUpload" class="step">
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" hidden>
+        <div class="dz-icon">⬆</div>
+        <div class="dz-main" id="dzMain">Select PDF file</div>
+        <div class="dz-sub">or drop it here</div>
+      </label>
+    </div>
+
+    <!-- Step 2: options -->
+    <div id="stepOptions" class="step card" hidden>
+      <ul class="filelist" id="fileList"></ul>
+      <button class="link" id="addMoreBtn" hidden>+ Add more files</button>
+      <div id="options"></div>
+      <p class="error" id="errorMsg" hidden></p>
+      <div class="actions">
+        <button class="ghost" id="resetBtn">Cancel</button>
+        <button class="primary" id="runBtn">Process</button>
+      </div>
+    </div>
+
+    <!-- Step 3: working -->
+    <div id="stepWorking" class="step card center" hidden>
+      <div class="spinner"></div>
+      <p>Processing your file…</p>
+    </div>
+
+    <!-- Step 4: done -->
+    <div id="stepDone" class="step card center" hidden>
+      <div class="check">✓</div>
+      <h2 id="doneTitle">Your file is ready</h2>
+      <p class="muted" id="doneMeta"></p>
+      <a class="primary big" id="downloadBtn" download>Download</a>
+
+      <div class="protect-box" id="protectBox">
+        <label class="toggle" id="protectToggleRow">
+          <input type="checkbox" id="protectToggle">
+          <span>🔒 Password-protect this file before downloading</span>
+        </label>
+        <div id="protectFields" hidden>
+          <div class="field">
+            <label for="resultPw">Password</label>
+            <input type="password" id="resultPw" autocomplete="new-password">
+          </div>
+          <div class="field">
+            <label for="resultPw2">Repeat password</label>
+            <input type="password" id="resultPw2" autocomplete="new-password">
+          </div>
+          <p class="error" id="protectError" hidden></p>
+          <button class="primary" id="protectApply">Add password</button>
+        </div>
+        <p class="protect-done" id="protectDone" hidden>🔒 Password added. The download button above now gives you the protected file.</p>
+      </div>
+
+      <button class="link" id="againBtn">Process another file</button>
+    </div>
+  </section>
+</main>
+
+<footer>Processed locally on your server, in memory. Nothing is stored.</footer>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
