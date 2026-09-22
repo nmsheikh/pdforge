@@ -13,6 +13,7 @@
     <img class="logo" src="{{ url_for('static', filename='logo.svg') }}" alt="" width="40" height="40"><span>pdforge</span>
   </a>
   <nav class="quicknav" id="quickNav" aria-label="Popular tools"></nav>
+  <button class="get-app web-only" id="getAppBtn">Download app</button>
   <div class="menu-wrap">
     <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="megaMenu">
       All tools <span class="chev" aria-hidden="true">▾</span>
@@ -69,6 +70,7 @@
       <h2>Your file is ready</h2>
       <p class="muted" id="doneMeta"></p>
       <a class="primary big" id="downloadBtn" download>Download</a>
+      <p class="saved-note" id="savedNote" hidden></p>
 
       <div class="protect-box" id="protectBox">
         <label class="toggle" id="protectToggleRow">
@@ -101,10 +103,38 @@
 </main>
 
 <footer>
-  Files are processed in memory and never stored.
+  <span class="web-only">Files are processed in memory and never stored.
   {% if online %}Online version: up to {{ max_upload_mb }} MB per upload.
-  For bigger files, <a href="https://github.com/nmsheikh/pdforge">run pdforge on your own computer</a>.{% endif %}
+  For bigger files, <button class="link inline" data-open-download>get the free desktop app</button>.{% endif %}</span>
+  <span class="desktop-only">pdforge desktop · Your files never leave this computer.</span>
 </footer>
+
+<!-- Desktop app download panel (website only) -->
+<div class="modal-backdrop" id="downloadModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dlTitle">
+    <button class="modal-close" id="dlClose" aria-label="Close">✕</button>
+    <p class="dl-reason" id="dlReason" hidden></p>
+    <h2 id="dlTitle">Get pdforge for your computer</h2>
+    <ul class="dl-perks">
+      <li><strong>No file size limit</strong>: work with PDFs of any size</li>
+      <li><strong>Private</strong>: your files never leave your computer</li>
+      <li><strong>Works offline</strong>, free, and only about 10 MB</li>
+    </ul>
+    <div class="dl-buttons">
+      <a class="dl-btn" data-os="mac" href="/download/mac-arm"><strong>macOS</strong><span>Apple Silicon (M1 and newer)</span></a>
+      <a class="dl-btn" data-os="mac" href="/download/mac-intel"><strong>macOS</strong><span>Intel</span></a>
+      <a class="dl-btn" data-os="windows" href="/download/windows"><strong>Windows</strong><span>10 and 11 (64-bit)</span></a>
+      <a class="dl-btn" data-os="linux" href="/download/linux"><strong>Linux</strong><span>Ubuntu / Debian (.deb)</span></a>
+    </div>
+    <details class="dl-help">
+      <summary>First time opening it?</summary>
+      <p>The app isn't signed with a paid Apple or Microsoft certificate yet, so your computer asks once:</p>
+      <p><strong>macOS:</strong> open the downloaded file, drag pdforge to Applications, then right-click the app and choose <em>Open</em>, then <em>Open</em> again.</p>
+      <p><strong>Windows:</strong> if you see "Windows protected your PC", click <em>More info</em>, then <em>Run anyway</em>.</p>
+    </details>
+    <p class="hint center"><a href="https://github.com/nmsheikh/pdforge/releases/latest" target="_blank" rel="noopener">All versions and release notes</a></p>
+  </div>
+</div>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

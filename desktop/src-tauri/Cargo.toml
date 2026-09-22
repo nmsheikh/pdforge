@@ -1,0 +1,25 @@
+[package]
+name = "pdforge"
+version = "3.0.0"
+description = "pdforge: every PDF tool you need, running on your own computer"
+edition = "2021"
+publish = false
+
+[features]
+# Test builds only: runs desktop/tests/selftest.mjs in the app and writes a report.
+selftest = []
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
+# Keep the app small.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

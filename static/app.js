@@ -2,7 +2,11 @@
 
 const $ = (id) => document.getElementById(id);
 const MM = 72 / 25.4; // points per millimetre
-const MAX_UPLOAD_BYTES = (+document.body.dataset.maxUploadMb || 200) * 1024 * 1024;
+// Desktop app (or the website with ?local=1): process PDFs on this device, no server.
+const DESKTOP = document.body.dataset.desktop === "1";
+const LOCAL = DESKTOP || new URLSearchParams(location.search).has("local");
+const MAX_UPLOAD_BYTES = LOCAL || !+document.body.dataset.maxUploadMb
+  ? Infinity : +document.body.dataset.maxUploadMb * 1024 * 1024;
 
 // Icon paths adapted from Lucide (ISC licence).
 const ICONS = {
@@ -331,8 +335,10 @@ function showError(msg) {
   $("errorMsg").textContent = msg || "";
   $("errorMsg").hidden = !msg;
 }
+let engine = null;
 async function postForm(url, fd) {
-  const res = await fetch(url, { method: "POST", body: fd });
+  if (LOCAL) engine ||= await import("./engine/engine.mjs");
+  const res = LOCAL ? await engine.handle(url, fd) : await fetch(url, { method: "POST", body: fd });
   if (!res.ok) {
     let msg = "Something went wrong.";
     try {
@@ -440,7 +446,7 @@ async function addFiles(list) {
   const next = tool.multiple ? files.concat(incoming) : [incoming[0]];
   const total = next.reduce((s, f) => s + f.size, 0);
   if (total > MAX_UPLOAD_BYTES) {
-    alert(`That's ${fmtSize(total)} in total. The limit is ${fmtSize(MAX_UPLOAD_BYTES)} per upload.`);
+    openDownload(`${next.length > 1 ? "These files are" : "This file is"} ${fmtSize(total)}. The online version handles up to ${MAX_UPLOAD_BYTES / 1048576} MB per upload. The desktop app has no limit.`);
     return;
   }
 
@@ -802,6 +808,10 @@ async function run() {
       const pct = Math.round((1 - blob.size / inSize) * 100);
       extra = pct > 0 ? ` · ${pct}% smaller` : " · already as small as it gets";
     }
+    if (!LOCAL && MAX_UPLOAD_BYTES !== Infinity && blob.size > MAX_UPLOAD_BYTES) {
+      // Too big to send back to the server for "Continue with…" or adding a password.
+      extra += " · open it in the desktop app to keep editing";
+    }
     setResult(blob, name, extra);
     resetProtectBox();
     renderContinue();
@@ -815,6 +825,7 @@ async function run() {
 function setResult(blob, name, extra = "") {
   if (downloadUrl) URL.revokeObjectURL(downloadUrl);
   result = { blob, name };
+  $("savedNote").hidden = true;
   downloadUrl = URL.createObjectURL(blob);
   $("downloadBtn").href = downloadUrl;
   $("downloadBtn").download = name;
@@ -883,7 +894,50 @@ async function protectResult() {
   }
 }
 
+// ---------- desktop app: download panel (website) and saving files (app) ----------
+function detectOs() {
+  const p = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent).toLowerCase();
+  return p.includes("mac") ? "mac" : p.includes("win") ? "windows" : p.includes("linux") ? "linux" : "";
+}
+
+function openDownload(reason = "") {
+  $("dlReason").textContent = reason;
+  $("dlReason").hidden = !reason;
+  const os = detectOs();
+  document.querySelectorAll(".dl-btn").forEach((a, i, all) => {
+    // Can't tell Apple Silicon from Intel in the browser; suggest Apple Silicon (most current Macs).
+    const first = [...all].find((b) => b.dataset.os === os);
+    a.classList.toggle("suggested", a === first);
+  });
+  $("downloadModal").hidden = false;
+  $("dlClose").focus();
+}
+const closeDownload = () => { $("downloadModal").hidden = true; };
+
+// In the desktop app, "Download" opens a native Save dialog (Tauri command in src-tauri).
+async function saveInApp(e) {
+  if (!DESKTOP || !result) return;
+  e.preventDefault();
+  try {
+    const bytes = new Uint8Array(await result.blob.arrayBuffer());
+    const path = await window.__TAURI__.core.invoke("save_file", bytes, {
+      headers: { "x-filename": encodeURIComponent(result.name) },
+    });
+    if (path) {
+      $("savedNote").textContent = `Saved to ${path}`;
+      $("savedNote").hidden = false;
+    }
+  } catch (err) {
+    alert(`Couldn't save the file: ${err}`);
+  }
+}
+
 // ---------- wiring ----------
+$("downloadBtn").addEventListener("click", saveInApp);
+$("getAppBtn").addEventListener("click", () => openDownload());
+document.querySelectorAll("[data-open-download]").forEach((b) => b.addEventListener("click", () => openDownload()));
+$("dlClose").addEventListener("click", closeDownload);
+$("downloadModal").addEventListener("click", (e) => { if (e.target === $("downloadModal")) closeDownload(); });
 $("fileInput").addEventListener("change", (e) => addFiles(e.target.files));
 const dz = $("dropzone");
 ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
@@ -919,7 +973,7 @@ $("protectFields").addEventListener("keydown", (e) => { if (e.key === "Enter") {
 
 $("menuBtn").addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(); });
 document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) toggleMenu(false); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") toggleMenu(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { toggleMenu(false); closeDownload(); } });
 window.addEventListener("hashchange", route);
 
 renderNav();

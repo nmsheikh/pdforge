@@ -9,11 +9,13 @@ import math
 import os
 import re
 import secrets
+import time
+import urllib.request
 import zipfile
 
 import pikepdf
 import pypdfium2 as pdfium
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file
 from PIL import Image
 from reportlab.lib.colors import HexColor
 from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -213,6 +215,45 @@ def handle_too_large(_err):
     return jsonify(error=f"Files are too large. The limit is {MAX_UPLOAD_MB} MB per upload."), 413
 
 
+# ---------- desktop app downloads ----------
+
+RELEASES_PAGE = "https://github.com/nmsheikh/pdforge/releases/latest"
+RELEASES_API = "https://api.github.com/repos/nmsheikh/pdforge/releases/latest"
+# Installer file names produced by the GitHub Actions release build (Tauri).
+DOWNLOAD_PATTERNS = {
+    "mac-arm": r"_aarch64\.dmg$",
+    "mac-intel": r"_x64\.dmg$",
+    "windows": r"_x64-setup\.exe$",
+    "linux": r"_amd64\.deb$",
+}
+_release_cache = {"at": 0.0, "assets": []}
+
+
+def latest_release_assets():
+    """Asset list of the latest GitHub release, cached for 10 minutes."""
+    if time.time() - _release_cache["at"] > 600:
+        req = urllib.request.Request(RELEASES_API, headers={"User-Agent": "pdforge", "Accept": "application/vnd.github+json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                _release_cache["assets"] = json.load(resp).get("assets", [])
+            _release_cache["at"] = time.time()
+        except Exception:
+            pass  # keep whatever we had; the caller falls back to the releases page
+    return _release_cache["assets"]
+
+
+@app.get("/download/<platform>")
+def download(platform):
+    """Redirect to the newest installer for a platform (so links never go stale)."""
+    pattern = DOWNLOAD_PATTERNS.get(platform)
+    if not pattern:
+        abort(404)
+    for asset in latest_release_assets():
+        if re.search(pattern, asset.get("name", "")):
+            return redirect(asset["browser_download_url"])
+    return redirect(RELEASES_PAGE)
+
+
 @app.route("/")
 def index():
     return render_template("index.html", max_upload_mb=MAX_UPLOAD_MB, online=ON_VERCEL)
@@ -234,7 +275,7 @@ def inspect():
             with pikepdf.open(io.BytesIO(f.read())) as pdf:
                 first = pdf.pages[0] if len(pdf.pages) else None
                 out.append({
-                    "encrypted": pdf.is_encrypted,
+                    "encrypted": False,  # opened without a password (at most print/copy restrictions)
                     "pages": len(pdf.pages),
                     "size": visual_size(first) if first else None,
                     "metadata": read_metadata(pdf),

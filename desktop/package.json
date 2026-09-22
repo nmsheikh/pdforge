@@ -1,0 +1,23 @@
+{
+  "name": "pdforge-desktop",
+  "private": true,
+  "version": "3.0.0",
+  "description": "pdforge desktop app (Tauri) with in-app PDF processing",
+  "scripts": {
+    "tauri": "tauri",
+    "vendor": "node scripts/vendor.mjs",
+    "build:web": "node scripts/build-dist.mjs",
+    "prepare-dist": "npm run vendor && npm run build:web",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {
+    "@neslinesli93/qpdf-wasm": "^0.3.0",
+    "fflate": "^0.8.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5"
+  }
+}

@@ -318,4 +318,46 @@ h2 { margin: 8px 0 4px; }
 .continue-chip:hover { border-color: var(--cat); color: var(--cat); }
 
 footer { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 16px; }
-footer a { color: inherit; }
+footer a, footer .link.inline { color: inherit; text-decoration: underline; font-weight: inherit; font-size: inherit; }
+body[data-desktop="1"] .web-only { display: none !important; }
+body:not([data-desktop="1"]) .desktop-only { display: none !important; }
+
+/* ---------- Download app ---------- */
+.get-app {
+  margin-left: auto; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: transparent; color: var(--accent);
+}
+.get-app:hover { background: var(--accent); color: #fff; }
+.get-app + .menu-wrap { margin-left: 0; }
+.menu-wrap { flex: none; }
+@media (max-width: 480px) { .get-app { padding: 6px 10px; font-size: 13px; } }
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
+  background: rgba(10, 10, 20, .55);
+}
+.modal {
+  position: relative; width: min(560px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
+  background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 28px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+}
+.modal h2 { margin: 0 0 12px; font-size: 24px; }
+.modal-close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border: none; border-radius: 8px; background: var(--bg); color: var(--muted); cursor: pointer; font-size: 15px; }
+.modal-close:hover { color: var(--text); }
+.dl-reason { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); color: var(--text); font-size: 15px; }
+.dl-perks { margin: 0 0 18px; padding-left: 20px; color: var(--muted); }
+.dl-perks strong { color: var(--text); }
+.dl-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 480px) { .dl-buttons { grid-template-columns: 1fr; } }
+.dl-btn {
+  display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 10px; text-decoration: none;
+  border: 1px solid var(--border); color: var(--text); background: var(--bg);
+}
+.dl-btn span { font-size: 13px; color: var(--muted); }
+.dl-btn:hover { border-color: var(--accent); }
+.dl-btn.suggested { border-color: var(--accent); background: var(--accent-soft); }
+.dl-btn.suggested strong::after { content: " · Recommended"; font-weight: 600; font-size: 12px; color: var(--accent); }
+.modal a:not(.dl-btn) { color: var(--accent); }
+.dl-help { margin: 16px 0 8px; font-size: 14px; }
+.dl-help summary { cursor: pointer; font-weight: 600; }
+.dl-help p { margin: 8px 0 0; color: var(--muted); }
+.dl-help strong { color: var(--text); }
+.saved-note { margin: 0 0 6px; font-size: 14px; color: var(--ok); font-weight: 600; word-break: break-all; }
