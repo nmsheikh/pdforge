@@ -14,6 +14,7 @@
   </a>
   <nav class="quicknav" id="quickNav" aria-label="Popular tools"></nav>
   <button class="get-app web-only" id="getAppBtn"><span class="wide-only">Download</span><span class="narrow-only">Get</span> app</button>
+  <button class="desktop-nudge web-only" id="nudgeBtn" aria-label="Big files? Use pdforge on a computer"><span>Big files?</span><span>Use a computer</span></button>
   <div class="menu-wrap">
     <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="megaMenu">
       All tools <span class="chev" aria-hidden="true">▾</span>
@@ -115,6 +116,13 @@
     <button class="modal-close" id="dlClose" aria-label="Close">✕</button>
     <p class="dl-reason" id="dlReason" hidden></p>
     <h2 id="dlTitle">Get pdforge for your computer</h2>
+    <div class="dl-phone" id="dlPhone" hidden>
+      <p>The free pdforge app runs on Mac, Windows and Linux computers. On a computer you can work with PDFs of any size.</p>
+      <p>Open <strong>pdforge-nms.vercel.app</strong> on your computer and click <strong>Download app</strong>.</p>
+      <button class="primary" id="shareLink">Send this link to my computer</button>
+      <p class="hint" id="shareNote" hidden></p>
+    </div>
+    <div id="dlDesktop">
     <ul class="dl-perks">
       <li><strong>No file size limit</strong>: work with PDFs of any size</li>
       <li><strong>Private</strong>: your files never leave your computer</li>
@@ -133,6 +141,7 @@
       <p><strong>Windows:</strong> if you see "Windows protected your PC", click <em>More info</em>, then <em>Run anyway</em>.</p>
     </details>
     <p class="hint center"><a href="https://github.com/nmsheikh/pdforge/releases/latest" target="_blank" rel="noopener">All versions and release notes</a></p>
+    </div>
   </div>
 </div>
 

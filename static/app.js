@@ -446,7 +446,7 @@ async function addFiles(list) {
   const next = tool.multiple ? files.concat(incoming) : [incoming[0]];
   const total = next.reduce((s, f) => s + f.size, 0);
   if (total > MAX_UPLOAD_BYTES) {
-    openDownload(`${next.length > 1 ? "These files are" : "This file is"} ${fmtSize(total)}. The online version handles up to ${MAX_UPLOAD_BYTES / 1048576} MB per upload. The desktop app has no limit.`);
+    openDownload(`${next.length > 1 ? "These files are" : "This file is"} ${fmtSize(total)}. The online version handles up to ${MAX_UPLOAD_BYTES / 1048576} MB per upload. ${IS_PHONE ? "On a computer, the free desktop app has no limit." : "The desktop app has no limit."}`);
     return;
   }
 
@@ -900,7 +900,16 @@ function detectOs() {
   return p.includes("mac") ? "mac" : p.includes("win") ? "windows" : p.includes("linux") ? "linux" : "";
 }
 
+// Phones and tablets can't run the desktop app.
+const IS_PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+  || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform)); // iPadOS reports "Mac"
+document.body.classList.toggle("phone", IS_PHONE);
+
 function openDownload(reason = "") {
+  $("dlTitle").textContent = IS_PHONE ? "Use pdforge on a computer" : "Get pdforge for your computer";
+  $("dlPhone").hidden = !IS_PHONE;
+  $("dlDesktop").hidden = IS_PHONE;
+  $("shareNote").hidden = true;
   $("dlReason").textContent = reason;
   $("dlReason").hidden = !reason;
   const os = detectOs();
@@ -935,6 +944,21 @@ async function saveInApp(e) {
 // ---------- wiring ----------
 $("downloadBtn").addEventListener("click", saveInApp);
 $("getAppBtn").addEventListener("click", () => openDownload());
+$("nudgeBtn").addEventListener("click", () => openDownload());
+$("shareLink").addEventListener("click", async () => {
+  const url = location.origin + "/";
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "pdforge", text: "Open this on your computer to get the pdforge app", url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    $("shareNote").textContent = "Link copied. Paste it into a message or email to yourself.";
+  } catch (_) {
+    $("shareNote").textContent = `Open ${url} on your computer.`;
+  }
+  $("shareNote").hidden = false;
+});
 document.querySelectorAll("[data-open-download]").forEach((b) => b.addEventListener("click", () => openDownload()));
 $("dlClose").addEventListener("click", closeDownload);
 $("downloadModal").addEventListener("click", (e) => { if (e.target === $("downloadModal")) closeDownload(); });

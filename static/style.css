@@ -333,6 +333,18 @@ body:not([data-desktop="1"]) .desktop-only { display: none !important; }
 .menu-wrap { flex: none; position: relative; }
 body[data-desktop="1"] .menu-wrap { margin-left: auto; } /* no Download button in the app */
 .get-app { white-space: nowrap; }
+/* Phones can't run the desktop app: show a nudge to use a computer instead. */
+.desktop-nudge {
+  display: none; margin-left: auto; flex-direction: column; align-items: flex-end; line-height: 1.2;
+  background: none; border: none; padding: 2px 4px; cursor: pointer; font: inherit; font-size: 11px; color: var(--muted); text-align: right;
+}
+.desktop-nudge span:last-child { color: var(--accent); font-weight: 700; }
+body.phone .get-app { display: none !important; }
+body.phone .desktop-nudge { display: flex; }
+body.phone .desktop-nudge + .menu-wrap { margin-left: 0; }
+.dl-phone p { margin: 0 0 12px; color: var(--muted); }
+.dl-phone strong { color: var(--text); }
+.dl-phone .primary { width: 100%; }
 .narrow-only { display: none; }
 @media (max-width: 520px) {
   .topbar { padding: 10px 14px; gap: 8px; }
