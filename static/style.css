@@ -101,8 +101,27 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
   position: sticky; top: 14px; z-index: 20;
   display: flex; align-items: center; gap: 16px;
   width: min(1180px, calc(100% - 28px)); margin: 14px auto 0; padding: 12px 16px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--pill);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--border); border-radius: var(--pill);
   box-shadow: var(--shadow);
+}
+/* Frosts the strip the bar floats in, so page text dissolves instead of
+   peeking through the gap above its rounded corners. */
+.topbar::before {
+  content: ""; position: fixed; left: 0; right: 0; top: 0; height: 90px; z-index: -1; pointer-events: none;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  background: linear-gradient(to bottom, var(--bg) 40%, color-mix(in srgb, var(--bg) 55%, transparent) 78%, transparent);
+}
+@media (max-width: 520px) { .topbar::before { height: 72px; } }
+/* Older browsers: keep the bar solid rather than see-through. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .topbar { background: var(--surface); }
+  .topbar::before { background: var(--bg); }
 }
 .brand { display: flex; align-items: center; gap: 9px; font-family: var(--font-wordmark); font-weight: 400; font-size: 25px; color: var(--text); text-decoration: none; letter-spacing: -.01em; }
 .logo { display: block; width: 32px; height: 32px; }
