@@ -221,7 +221,7 @@ RELEASES = "https://github.com/nmsheikh/pdforge/releases"
 RELEASES_PAGE = f"{RELEASES}/latest"
 RELEASES_API = "https://api.github.com/repos/nmsheikh/pdforge/releases/latest"
 # Bump this with each desktop release (desktop/package.json, tauri.conf.json, Cargo.toml).
-APP_VERSION = "3.0.1"
+APP_VERSION = "3.1.0"
 # Installer file names produced by the GitHub Actions release build (Tauri).
 DOWNLOAD_PATTERNS = {
     "mac-arm": r"_aarch64\.dmg$",
