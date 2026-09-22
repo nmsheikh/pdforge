@@ -631,7 +631,13 @@ function renderOptions() {
     : pwField + (tool.options ? tool.options(info) : "") + protectSection;
   $("options").innerHTML = tool.preview
     ? `<div class="opt-grid"><div class="preview" id="preview">
-         <div class="pv-page" id="pvPage"><img id="pvImg" alt="Preview of page 1"><div class="pv-layer" id="pvLayer"></div></div>
+         <div class="pv-page" id="pvPage"><img id="pvImg" alt="Page preview"><div class="pv-layer" id="pvLayer"></div></div>
+         <div class="pv-bar" id="pvBar" hidden>
+           <button type="button" class="ghost sm" id="pvPagePrev" aria-label="Previous page">‹</button>
+           <span class="pv-label" id="pvPageLabel"></span>
+           <button type="button" class="ghost sm" id="pvPageNext" aria-label="Next page">›</button>
+           <button type="button" class="ghost sm" id="pvPageBig" title="Open a bigger preview">⤢</button>
+         </div>
          <p class="hint center" id="pvNote">Loading preview…</p></div>
        <div class="controls">${controls}</div></div>`
     : controls;
@@ -665,7 +671,7 @@ function renderOptions() {
 }
 
 // ---------- live preview (watermark, page numbers, crop) ----------
-const preview = { size: null };
+const preview = { size: null, page: 1, total: 1 };
 
 function textWidth(text, weight = "") {
   const ctx = (textWidth.ctx ||= document.createElement("canvas").getContext("2d"));
@@ -673,30 +679,52 @@ function textWidth(text, weight = "") {
   return ctx.measureText(text).width / 100;
 }
 
-async function initPreview() {
+function initPreview() {
+  preview.page = 1;
+  preview.total = info.pages || 1;
+  return loadPreview();
+}
+
+async function loadPreview() {
   preview.size = null;
   const pw = $("options").querySelector('input[name="password"]');
   if (info.encrypted && !pwValue()) {
     $("pvNote").textContent = "Enter the password to see a preview.";
     $("pvPage").hidden = true;
-    if (pw) pw.addEventListener("change", initPreview, { once: true });
+    if (pw) pw.addEventListener("change", loadPreview, { once: true });
     return;
   }
   try {
     const fd = new FormData();
     fd.append("files", files[0]);
     fd.append("limit", "1");
+    fd.append("page", String(preview.page));
     fd.append("width", "520");
     fd.append("password", pwValue());
     const data = await (await postForm("/api/thumbnails", fd)).json();
     preview.size = data.sizes[0];
+    preview.total = data.total || preview.total;
     $("pvImg").onload = () => { $("pvPage").hidden = false; updatePreview(); };
     $("pvImg").src = data.pages[0];
-    $("pvNote").textContent = files.length > 1 ? "Preview of the first page of the first file." : "Preview of page 1.";
+    $("pvBar").hidden = false;
+    $("pvPageLabel").textContent = `Page ${preview.page} of ${preview.total}`;
+    $("pvPagePrev").disabled = preview.page <= 1;
+    $("pvPageNext").disabled = preview.page >= preview.total;
+    $("pvNote").textContent = files.length > 1 ? "First file: this is how every page will look." : "Every page gets the same treatment.";
+    $("pvPagePrev").onclick = () => stepPreviewPage(-1);
+    $("pvPageNext").onclick = () => stepPreviewPage(1);
+    $("pvPageBig").onclick = () => openPreview(0, preview.page);
   } catch (e) {
     $("pvNote").textContent = e.message;
-    if (pw) pw.addEventListener("change", initPreview, { once: true });
+    if (pw) pw.addEventListener("change", loadPreview, { once: true });
   }
+}
+
+function stepPreviewPage(delta) {
+  const next = preview.page + delta;
+  if (next < 1 || next > preview.total) return;
+  preview.page = next;
+  loadPreview();
 }
 
 function updatePreview() {

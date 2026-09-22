@@ -310,12 +310,16 @@ body[data-desktop="1"] .menu-wrap { margin-left: auto; } /* no Download button i
 /* ---------- Options with live preview ---------- */
 .opt-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; align-items: start; }
 @media (max-width: 760px) { .opt-grid { grid-template-columns: 1fr; } }
-.preview { position: sticky; top: 90px; }
+/* Only pin the preview beside the controls; stacked, a sticky preview would cover them. */
+@media (min-width: 761px) { .preview { position: sticky; top: 90px; } }
 .pv-page {
-  position: relative; overflow: hidden; margin: 0 auto; max-width: 380px;
+  position: relative; overflow: hidden; margin: 0 auto; max-width: min(380px, 100%); max-height: 62vh;
   border-radius: 10px; box-shadow: 0 10px 30px -18px rgba(28, 26, 23, .5); background: #fff;
 }
 .pv-page img { display: block; width: 100%; height: auto; }
+.pv-bar { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
+.pv-bar button { padding: 5px 12px; font-size: 14px; line-height: 1; }
+.pv-bar .pv-label { font-size: 12.5px; color: var(--muted); min-width: 96px; text-align: center; }
 .pv-layer { position: absolute; inset: 0; pointer-events: none; font-family: Helvetica, Arial, sans-serif; }
 .pv-text { position: absolute; white-space: nowrap; line-height: 1; }
 .pv-text.mid { transform: translate(-50%, -50%); }
