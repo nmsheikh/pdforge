@@ -456,6 +456,8 @@ def extract():
     f = pdf_files()[0]
     pdf = open_pdf(f, form_password())
     n = len(pdf.pages)
+    if n < 2:
+        raise ToolError("This PDF has only one page, so there is nothing to select.")
     try:
         chosen = [int(x) for x in re.split(r"[\s,]+", request.form.get("pages", "").strip()) if x]
     except ValueError:

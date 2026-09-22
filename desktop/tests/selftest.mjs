@@ -98,6 +98,8 @@ async function runEngine() {
 
   r = await call("/api/split", { mode: "all" }, [asFile(await makePdf(1), "one.pdf")]);
   check("split refuses a one-page PDF", r.status === 400, r.body.error);
+  r = await call("/api/extract", { pages: "1" }, [asFile(await makePdf(1), "one.pdf")]);
+  check("select pages refuses a one-page PDF", r.status === 400, r.body.error);
   r = await call("/api/unlock", {}, [asFile(ten, "open.pdf")]);
   check("unlock refuses a PDF with no password", r.status === 400, r.body.error);
 

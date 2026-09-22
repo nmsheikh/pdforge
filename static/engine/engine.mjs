@@ -412,6 +412,7 @@ async function extract(fd) {
   const f = pdfFiles(fd)[0];
   const src = await loadPdf(f, str(fd, "password"));
   const n = src.getPageCount();
+  if (n < 2) throw new ToolError("This PDF has only one page, so there is nothing to select.");
   const chosen = str(fd, "pages").trim().split(/[\s,]+/).filter(Boolean).map((x) => {
     if (!/^\d+$/.test(x)) throw new ToolError("Pages must be numbers, e.g. 2, 4, 7.");
     return +x;

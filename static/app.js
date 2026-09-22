@@ -117,6 +117,7 @@ const TOOLS = [
   },
   {
     id: "extract", category: "organize", title: "Select pages",
+    guard: (info) => (info.pages === 1 ? "This PDF has only one page, so there is nothing to select. Merge it with another PDF first, or use Rotate or Crop on a single page." : null),
     desc: "Click the pages you want, such as 2, 4 and 7, and get a new PDF with only those pages.",
     endpoint: "/api/extract", wide: true, button: "Create PDF",
     options: () => `
