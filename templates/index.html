@@ -3,22 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PDFKit</title>
+<title>pdforge</title>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header class="topbar">
-  <a href="#" class="brand" id="homeLink">
-    <span class="logo">PDF</span><span>Kit</span>
+  <a href="#" class="brand" id="homeLink" aria-label="pdforge home">
+    <img class="logo" src="{{ url_for('static', filename='logo.svg') }}" alt="" width="40" height="40"><span>pdforge</span>
   </a>
-  <span class="tagline">Every PDF tool you need. Files never leave memory.</span>
+  <nav class="quicknav" id="quickNav" aria-label="Popular tools"></nav>
+  <div class="menu-wrap">
+    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="megaMenu">
+      All tools <span class="chev" aria-hidden="true">▾</span>
+    </button>
+    <div class="mega" id="megaMenu" hidden></div>
+  </div>
 </header>
 
 <main>
-  <!-- Home: tool grid -->
+  <!-- Home: tool catalogue -->
   <section id="home">
     <h1>Every tool you need to work with PDFs</h1>
-    <p class="lead">Pick a tool, drop your file, download the result.</p>
+    <p class="lead">Pick a tool, drop your file, download the result. Everything runs on your own machine.</p>
+    <div class="chips" id="chips" role="tablist" aria-label="Tool categories"></div>
     <div class="grid" id="toolGrid"></div>
   </section>
 
@@ -32,18 +40,17 @@
     <div id="stepUpload" class="step">
       <label class="dropzone" id="dropzone">
         <input type="file" id="fileInput" hidden>
-        <div class="dz-icon">⬆</div>
         <div class="dz-main" id="dzMain">Select PDF file</div>
-        <div class="dz-sub">or drop it here</div>
+        <div class="dz-sub" id="dzSub">or drop it here</div>
       </label>
     </div>
 
     <!-- Step 2: options -->
     <div id="stepOptions" class="step card" hidden>
       <ul class="filelist" id="fileList"></ul>
-      <button class="link" id="addMoreBtn" hidden>+ Add more files</button>
+      <button class="link left" id="addMoreBtn" hidden>+ Add more files</button>
       <div id="options"></div>
-      <p class="error" id="errorMsg" hidden></p>
+      <p class="error" id="errorMsg" role="alert" hidden></p>
       <div class="actions">
         <button class="ghost" id="resetBtn">Cancel</button>
         <button class="primary" id="runBtn">Process</button>
@@ -53,13 +60,13 @@
     <!-- Step 3: working -->
     <div id="stepWorking" class="step card center" hidden>
       <div class="spinner"></div>
-      <p>Processing your file…</p>
+      <p id="workingMsg">Processing your file…</p>
     </div>
 
     <!-- Step 4: done -->
     <div id="stepDone" class="step card center" hidden>
       <div class="check">✓</div>
-      <h2 id="doneTitle">Your file is ready</h2>
+      <h2>Your file is ready</h2>
       <p class="muted" id="doneMeta"></p>
       <a class="primary big" id="downloadBtn" download>Download</a>
 
@@ -81,6 +88,11 @@
           <button class="primary" id="protectApply">Add password</button>
         </div>
         <p class="protect-done" id="protectDone" hidden>🔒 Password added. The download button above now gives you the protected file.</p>
+      </div>
+
+      <div class="continue" id="continueBox" hidden>
+        <p class="continue-title">Continue with this file</p>
+        <div class="continue-list" id="continueList"></div>
       </div>
 
       <button class="link" id="againBtn">Process another file</button>

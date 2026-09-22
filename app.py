@@ -1,29 +1,46 @@
-"""PDFKit — a small iLovePDF-style PDF toolbox.
+"""pdforge — a small iLovePDF-style PDF toolbox.
 
 Everything is processed in memory; uploaded files are never written to disk.
 """
 import base64
 import io
+import json
+import math
 import os
 import re
+import secrets
 import zipfile
 
 import pikepdf
 import pypdfium2 as pdfium
 from flask import Flask, jsonify, render_template, request, send_file
 from PIL import Image
+from reportlab.lib.colors import HexColor
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfgen import canvas as rl_canvas
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB per request
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # always serve the latest JS/CSS
 THUMB_WIDTH = 180  # px, page-picker previews
+MM = 72 / 25.4  # points per millimetre
+
+# Compress levels: (max image resolution in DPI, JPEG quality); None = structural only.
+COMPRESS_LEVELS = {"low": None, "recommended": (150, 75), "extreme": (96, 50)}
+
+PAGE_NUMBER_FORMATS = {
+    "n": "{n}",
+    "page_n": "Page {n}",
+    "page_n_of": "Page {n} of {total}",
+    "n_slash": "{n} / {total}",
+}
 
 
 class ToolError(Exception):
     """An error whose message is safe to show to the user."""
 
 
-# ---------- helpers ----------
+# ---------- request helpers ----------
 
 def base_name(filename):
     name = os.path.splitext(os.path.basename(filename or "document"))[0]
@@ -37,27 +54,119 @@ def pdf_files():
     return files
 
 
-def open_pdf(file_storage, password=""):
-    data = file_storage.read()
-    try:
-        return pikepdf.open(io.BytesIO(data), password=password or "")
-    except pikepdf.PasswordError:
-        if password:
-            raise ToolError("Incorrect password. Please try again.")
-        raise ToolError(f"'{file_storage.filename}' is password-protected. Unlock it first with the Unlock PDF tool.")
-    except pikepdf.PdfError:
-        raise ToolError(f"'{file_storage.filename}' is not a valid PDF file.")
-
-
 def form_password():
     return request.form.get("password", "")
 
 
-def pdf_response(pdf, filename, **save_kwargs):
+def form_float(name, default, lo, hi):
+    try:
+        value = float(request.form.get(name, default))
+    except ValueError:
+        raise ToolError(f"'{name}' must be a number.")
+    return min(max(value, lo), hi)
+
+
+def form_flag(name):
+    return request.form.get(name) in ("1", "true", "on")
+
+
+def open_pdf(file_storage, password=""):
+    data = file_storage.read()
+    file_storage.seek(0)
+    try:
+        return pikepdf.open(io.BytesIO(data), password=password or "")
+    except pikepdf.PasswordError:
+        if password:
+            raise ToolError(f"Incorrect password for '{file_storage.filename}'.")
+        raise ToolError(f"'{file_storage.filename}' is password-protected. Enter its password first.")
+    except pikepdf.PdfError:
+        raise ToolError(f"'{file_storage.filename}' is not a valid PDF file.")
+
+
+# ---------- response helpers ----------
+
+def pdf_bytes(pdf, **save_kwargs):
     out = io.BytesIO()
     pdf.save(out, **save_kwargs)
-    out.seek(0)
-    return send_file(out, mimetype="application/pdf", as_attachment=True, download_name=filename)
+    return out.getvalue()
+
+
+MIMETYPES = {".pdf": "application/pdf", ".zip": "application/zip", ".jpg": "image/jpeg", ".png": "image/png"}
+
+
+def send_bytes(data, filename):
+    mimetype = MIMETYPES.get(os.path.splitext(filename)[1].lower(), "application/octet-stream")
+    return send_file(io.BytesIO(data), mimetype=mimetype, as_attachment=True, download_name=filename)
+
+
+def send_results(results, zip_name):
+    """One result -> that file. Several -> a ZIP (duplicate names get a suffix)."""
+    if len(results) == 1:
+        return send_bytes(results[0][1], results[0][0])
+    buf = io.BytesIO()
+    used = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in results:
+            stem, ext = os.path.splitext(name)
+            unique, i = name, 2
+            while unique in used:
+                unique, i = f"{stem} ({i}){ext}", i + 1
+            used.add(unique)
+            zf.writestr(unique, data)
+    return send_bytes(buf.getvalue(), zip_name)
+
+
+def for_each_pdf(suffix, process):
+    """Batch helper: run process(pdf) -> bytes on every uploaded PDF and return the PDF(s)."""
+    results = []
+    for f in pdf_files():
+        pdf = open_pdf(f, form_password())
+        results.append((f"{base_name(f.filename)}_{suffix}.pdf", process(pdf)))
+    return send_results(results, f"{suffix}.zip")
+
+
+# ---------- page geometry ----------
+
+def page_rotation(page):
+    """Effective /Rotate of a page (it can be inherited from the page tree)."""
+    node = page.obj
+    while node is not None:
+        if "/Rotate" in node:
+            return int(node.Rotate) % 360
+        node = node.get("/Parent")
+    return 0
+
+
+def page_box(page):
+    return [float(v) for v in page.cropbox]
+
+
+def visual_size(page):
+    x0, y0, x1, y1 = page_box(page)
+    w, h = x1 - x0, y1 - y0
+    return (h, w) if page_rotation(page) in (90, 270) else (w, h)
+
+
+def add_overlays(pdf, draw):
+    """Draw on every page with reportlab, in the page's *visual* orientation.
+
+    draw(canvas, visual_width, visual_height, page_index, page_count)
+    """
+    n = len(pdf.pages)
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf)
+    for i, page in enumerate(pdf.pages):
+        # add_overlay() counter-rotates the overlay for rotated pages, so we
+        # simply draw on a canvas the size of the page as it appears on screen.
+        vw, vh = visual_size(page)
+        c.setPageSize((vw, vh))
+        draw(c, vw, vh, i, n)
+        c.showPage()
+    c.save()
+    overlay = pikepdf.open(io.BytesIO(buf.getvalue()))
+    for page, ov in zip(pdf.pages, overlay.pages):
+        page.add_overlay(ov, pikepdf.Rectangle(*page_box(page)))
+    return pdf
 
 
 def parse_ranges(spec, page_count):
@@ -83,7 +192,7 @@ def parse_ranges(spec, page_count):
     return groups
 
 
-# ---------- routes ----------
+# ---------- routes: general ----------
 
 @app.errorhandler(ToolError)
 def handle_tool_error(err):
@@ -100,85 +209,156 @@ def index():
     return render_template("index.html")
 
 
+def read_metadata(pdf):
+    info = pdf.docinfo
+    keys = {"title": "/Title", "author": "/Author", "subject": "/Subject",
+            "keywords": "/Keywords", "creator": "/Creator", "producer": "/Producer"}
+    return {k: str(info[v]) if v in info else "" for k, v in keys.items()}
+
+
 @app.post("/api/inspect")
 def inspect():
-    """Tell the UI whether a PDF is encrypted and how many pages it has."""
-    f = pdf_files()[0]
-    data = f.read()
-    try:
-        with pikepdf.open(io.BytesIO(data)) as pdf:
-            return jsonify(encrypted=pdf.is_encrypted, pages=len(pdf.pages))
-    except pikepdf.PasswordError:
-        return jsonify(encrypted=True, pages=None)
-    except pikepdf.PdfError:
-        raise ToolError(f"'{f.filename}' is not a valid PDF file.")
-
-
-@app.post("/api/unlock")
-def unlock():
-    f = pdf_files()[0]
-    pdf = open_pdf(f, request.form.get("password", ""))
-    return pdf_response(pdf, f"{base_name(f.filename)}_unlocked.pdf", encryption=False)
-
-
-@app.post("/api/protect")
-def protect():
-    """Set a password, or change the password of an already-encrypted PDF.
-
-    Also accepts a ZIP of PDFs (e.g. a Split result) and protects every PDF inside it.
-    """
-    f = pdf_files()[0]
-    new_password = request.form.get("new_password", "")
-    if not new_password:
-        raise ToolError("Enter the new password.")
-    enc = pikepdf.Encryption(user=new_password, owner=new_password, R=6)  # AES-256
-    name = base_name(f.filename)
-
-    if f.filename.lower().endswith(".zip"):
+    """Per file: encrypted?, page count, first-page size (points) and metadata."""
+    out = []
+    for f in pdf_files():
         try:
-            src = zipfile.ZipFile(io.BytesIO(f.read()))
-        except zipfile.BadZipFile:
-            raise ToolError("That ZIP file is damaged.")
-        buf = io.BytesIO()
-        with src, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as dst:
-            for item in src.infolist():
-                data = src.read(item)
-                if item.filename.lower().endswith(".pdf"):
-                    with pikepdf.open(io.BytesIO(data)) as pdf:
-                        out = io.BytesIO()
-                        pdf.save(out, encryption=enc)
-                        data = out.getvalue()
-                dst.writestr(item.filename, data)
-        buf.seek(0)
-        return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=f"{name}_protected.zip")
-
-    pdf = open_pdf(f, form_password())
-    return pdf_response(pdf, f"{name}_protected.pdf", encryption=enc)
+            with pikepdf.open(io.BytesIO(f.read())) as pdf:
+                first = pdf.pages[0] if len(pdf.pages) else None
+                out.append({
+                    "encrypted": pdf.is_encrypted,
+                    "pages": len(pdf.pages),
+                    "size": visual_size(first) if first else None,
+                    "metadata": read_metadata(pdf),
+                })
+        except pikepdf.PasswordError:
+            out.append({"encrypted": True, "pages": None, "size": None, "metadata": None})
+        except pikepdf.PdfError:
+            raise ToolError(f"'{f.filename}' is not a valid PDF file.")
+    return jsonify(files=out)
 
 
 @app.post("/api/thumbnails")
 def thumbnails():
-    """Render small JPEG previews of every page (for the page picker)."""
+    """Render JPEG previews of the pages (all, or the first `limit`).
+
+    Also returns each page's on-screen size in points, so the UI can position
+    previews (watermark, page numbers, crop) to scale.
+    """
     f = pdf_files()[0]
-    data = f.read()
+    limit = int(request.form.get("limit") or 0)
+    width = int(form_float("width", THUMB_WIDTH, 60, 800))
     try:
-        doc = pdfium.PdfDocument(data, password=form_password() or None)
+        doc = pdfium.PdfDocument(f.read(), password=form_password() or None)
     except pdfium.PdfiumError:
         if form_password():
             raise ToolError("Incorrect password. Please try again.")
         raise ToolError(f"Couldn't open '{f.filename}'. Is it a password-protected or damaged PDF?")
-    pages = []
+    pages, sizes = [], []
     try:
-        for page in doc:
-            width = page.get_width() or 1
-            img = page.render(scale=THUMB_WIDTH / width).to_pil().convert("RGB")
+        count = min(limit, len(doc)) if limit else len(doc)
+        for i in range(count):
+            page = doc[i]
+            w, h = page.get_size()  # already accounts for /Rotate
+            img = page.render(scale=width / (w or 1)).to_pil().convert("RGB")
             out = io.BytesIO()
-            img.save(out, format="JPEG", quality=70)
+            img.save(out, format="JPEG", quality=75)
             pages.append("data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode())
+            sizes.append([round(w, 1), round(h, 1)])
             page.close()
     finally:
         doc.close()
-    return jsonify(pages=pages)
+    return jsonify(pages=pages, sizes=sizes)
+
+
+# ---------- routes: security ----------
+
+@app.post("/api/unlock")
+def unlock():
+    return for_each_pdf("unlocked", lambda pdf: pdf_bytes(pdf, encryption=False))
+
+
+@app.post("/api/protect")
+def protect():
+    """Set or change a password, optionally restricting printing/copying/editing.
+
+    Also accepts a ZIP of PDFs (e.g. a Split result) and protects every PDF inside it.
+    """
+    files = pdf_files()
+    new_password = request.form.get("new_password", "")
+    block_print, block_copy, block_edit = (form_flag(k) for k in ("block_print", "block_copy", "block_edit"))
+    restricted = block_print or block_copy or block_edit
+    if not new_password and not restricted:
+        raise ToolError("Enter a new password, or choose something to restrict.")
+
+    perms = pikepdf.Permissions(
+        print_lowres=not block_print, print_highres=not block_print,
+        extract=not block_copy, accessibility=True,
+        modify_annotation=not block_edit, modify_assembly=not block_edit,
+        modify_form=not block_edit, modify_other=not block_edit,
+    )
+    # With restrictions the owner password must differ from the open password,
+    # otherwise opening the file with it would lift the restrictions.
+    owner = secrets.token_urlsafe(24) if restricted else new_password
+    enc = pikepdf.Encryption(user=new_password, owner=owner, R=6, allow=perms)  # AES-256
+
+    results = []
+    for f in files:
+        name = base_name(f.filename)
+        if f.filename.lower().endswith(".zip"):
+            results.append((f"{name}_protected.zip", protect_zip(f.read(), enc)))
+        else:
+            pdf = open_pdf(f, form_password())
+            results.append((f"{name}_protected.pdf", pdf_bytes(pdf, encryption=enc)))
+    return send_results(results, "protected.zip")
+
+
+def protect_zip(data, enc):
+    try:
+        src = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        raise ToolError("That ZIP file is damaged.")
+    buf = io.BytesIO()
+    with src, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as dst:
+        for item in src.infolist():
+            content = src.read(item)
+            if item.filename.lower().endswith(".pdf"):
+                with pikepdf.open(io.BytesIO(content)) as pdf:
+                    content = pdf_bytes(pdf, encryption=enc)
+            dst.writestr(item.filename, content)
+    return buf.getvalue()
+
+
+# ---------- routes: organize ----------
+
+@app.post("/api/merge")
+def merge():
+    files = pdf_files()
+    if len(files) < 2:
+        raise ToolError("Add at least two PDFs to merge.")
+    out = pikepdf.new()
+    for f in files:
+        out.pages.extend(open_pdf(f, form_password()).pages)
+    return send_bytes(pdf_bytes(out), "merged.pdf")
+
+
+@app.post("/api/split")
+def split():
+    f = pdf_files()[0]
+    pdf = open_pdf(f, form_password())
+    name = base_name(f.filename)
+    n = len(pdf.pages)
+    mode = request.form.get("mode", "all")
+    groups = [[i] for i in range(n)] if mode == "all" else parse_ranges(request.form.get("ranges"), n)
+
+    results = []
+    for g in groups:
+        part = pikepdf.new()
+        part.pages.extend(pdf.pages[i] for i in g)
+        label = f"{g[0] + 1}" if len(g) == 1 else f"{g[0] + 1}-{g[-1] + 1}"
+        results.append((f"{name}_{label}.pdf", pdf_bytes(part)))
+    if len(results) == 1:
+        results = [(f"{name}_pages.pdf", results[0][1])]
+    return send_results(results, f"{name}_split.zip")
 
 
 @app.post("/api/extract")
@@ -199,73 +379,112 @@ def extract():
     out = pikepdf.new()
     for p in chosen:
         out.pages.append(pdf.pages[p - 1])
-    return pdf_response(out, f"{base_name(f.filename)}_pages.pdf")
+    return send_bytes(pdf_bytes(out), f"{base_name(f.filename)}_pages.pdf")
 
 
-@app.post("/api/merge")
-def merge():
-    files = pdf_files()
-    if len(files) < 2:
-        raise ToolError("Add at least two PDFs to merge.")
-    out = pikepdf.new()
-    for f in files:
-        src = open_pdf(f)
-        out.pages.extend(src.pages)
-    return pdf_response(out, "merged.pdf")
-
-
-@app.post("/api/split")
-def split():
+@app.post("/api/organize")
+def organize():
+    """Rebuild a PDF from a page plan: [{"page": 3, "rotate": 90}, {"blank": true}, ...]."""
     f = pdf_files()[0]
     pdf = open_pdf(f, form_password())
-    name = base_name(f.filename)
     n = len(pdf.pages)
-    mode = request.form.get("mode", "all")
-    groups = [[i] for i in range(n)] if mode == "all" else parse_ranges(request.form.get("ranges"), n)
+    try:
+        plan = json.loads(request.form.get("plan", "[]"))
+    except ValueError:
+        raise ToolError("Invalid page plan.")
+    if not isinstance(plan, list) or not plan:
+        raise ToolError("The document needs at least one page.")
 
-    if len(groups) == 1:
-        part = pikepdf.new()
-        part.pages.extend(pdf.pages[i] for i in groups[0])
-        return pdf_response(part, f"{name}_pages.pdf")
+    blank_size = visual_size(pdf.pages[0]) if n else (612, 792)
+    out = pikepdf.new()
+    for item in plan:
+        if item.get("blank"):
+            out.add_blank_page(page_size=blank_size)
+        else:
+            num = int(item.get("page", 0))
+            if not 1 <= num <= n:
+                raise ToolError(f"Page {num} doesn't exist.")
+            out.pages.append(pdf.pages[num - 1])
+        rotate = int(item.get("rotate", 0)) % 360
+        if rotate:
+            out.pages[-1].rotate(rotate, relative=True)
+    return send_bytes(pdf_bytes(out), f"{base_name(f.filename)}_organized.pdf")
 
+
+# ---------- routes: optimize ----------
+
+def shrink_image(obj, max_px, quality):
+    """Downsample/recompress one image XObject in place if that makes it smaller."""
+    if obj.get("/ImageMask") or "/Decode" in obj or int(obj.get("/BitsPerComponent", 8)) != 8:
+        return
+    pil = pikepdf.PdfImage(obj).as_pil_image()
+    if pil.mode not in ("RGB", "L"):
+        return
+    w, h = pil.size
+    scale = min(1.0, max_px / max(w, h))
+    if scale < 1:
+        pil = pil.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for g in groups:
-            part = pikepdf.new()
-            part.pages.extend(pdf.pages[i] for i in g)
-            label = f"{g[0] + 1}" if len(g) == 1 else f"{g[0] + 1}-{g[-1] + 1}"
-            pbuf = io.BytesIO()
-            part.save(pbuf)
-            zf.writestr(f"{name}_{label}.pdf", pbuf.getvalue())
-    buf.seek(0)
-    return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=f"{name}_split.zip")
+    pil.save(buf, format="JPEG", quality=quality, optimize=True)
+    data = buf.getvalue()
+    if len(data) >= len(obj.read_raw_bytes()):
+        return
+    obj.write(data, filter=pikepdf.Name.DCTDecode)
+    obj.Width, obj.Height = pil.size
+    obj.ColorSpace = pikepdf.Name.DeviceRGB if pil.mode == "RGB" else pikepdf.Name.DeviceGray
+    obj.BitsPerComponent = 8
+    if "/DecodeParms" in obj:
+        del obj.DecodeParms
 
 
-@app.post("/api/rotate")
-def rotate():
-    f = pdf_files()[0]
-    angle = int(request.form.get("angle", 90))
-    if angle not in (90, 180, 270):
-        raise ToolError("Rotation must be 90, 180 or 270 degrees.")
-    pdf = open_pdf(f, form_password())
-    for page in pdf.pages:
-        page.rotate(angle, relative=True)
-    return pdf_response(pdf, f"{base_name(f.filename)}_rotated.pdf")
-
-
-@app.post("/api/compress")
-def compress():
-    f = pdf_files()[0]
-    pdf = open_pdf(f, form_password())
+def compress_pdf(pdf, level):
+    settings = COMPRESS_LEVELS[level]
+    if settings:
+        dpi, quality = settings
+        seen = set()
+        for page in pdf.pages:
+            max_px = int(max(visual_size(page)) / 72 * dpi)
+            for img in page.images.values():
+                if img.objgen in seen:
+                    continue
+                seen.add(img.objgen)
+                try:
+                    shrink_image(img, max_px, quality)
+                except Exception:  # unusual image encodings are simply left alone
+                    continue
     pdf.remove_unreferenced_resources()
-    return pdf_response(
+    return pdf_bytes(
         pdf,
-        f"{base_name(f.filename)}_compressed.pdf",
         compress_streams=True,
         recompress_flate=True,
         object_stream_mode=pikepdf.ObjectStreamMode.generate,
     )
 
+
+@app.post("/api/compress")
+def compress():
+    level = request.form.get("level", "recommended")
+    if level not in COMPRESS_LEVELS:
+        raise ToolError("Unknown compression level.")
+    results = []
+    for f in pdf_files():
+        original = f.read()
+        f.seek(0)
+        data = compress_pdf(open_pdf(f, form_password()), level)
+        # Never hand back something bigger than what was uploaded.
+        if len(data) >= len(original):
+            data = original
+        results.append((f"{base_name(f.filename)}_compressed.pdf", data))
+    return send_results(results, "compressed.zip")
+
+
+@app.post("/api/repair")
+def repair():
+    # qpdf (inside pikepdf) reconstructs broken cross-reference tables while opening.
+    return for_each_pdf("repaired", lambda pdf: pdf_bytes(pdf, fix_metadata_version=True))
+
+
+# ---------- routes: convert ----------
 
 @app.post("/api/images-to-pdf")
 def images_to_pdf():
@@ -282,12 +501,190 @@ def images_to_pdf():
         images.append(img.convert("RGB"))
     out = io.BytesIO()
     images[0].save(out, format="PDF", save_all=True, append_images=images[1:], resolution=100.0)
-    out.seek(0)
     name = base_name(files[0].filename) if len(files) == 1 else "images"
-    return send_file(out, mimetype="application/pdf", as_attachment=True, download_name=f"{name}.pdf")
+    return send_bytes(out.getvalue(), f"{name}.pdf")
+
+
+@app.post("/api/pdf-to-image")
+def pdf_to_image():
+    f = pdf_files()[0]
+    fmt = request.form.get("format", "jpg")
+    if fmt not in ("jpg", "png"):
+        raise ToolError("Choose JPG or PNG.")
+    dpi = int(form_float("dpi", 150, 36, 300))
+    try:
+        doc = pdfium.PdfDocument(f.read(), password=form_password() or None)
+    except pdfium.PdfiumError:
+        raise ToolError("Couldn't open that PDF. Check the password.")
+    name = base_name(f.filename)
+    results = []
+    try:
+        for i in range(len(doc)):
+            page = doc[i]
+            img = page.render(scale=dpi / 72).to_pil().convert("RGB")
+            buf = io.BytesIO()
+            if fmt == "jpg":
+                img.save(buf, format="JPEG", quality=90, dpi=(dpi, dpi))
+            else:
+                img.save(buf, format="PNG", dpi=(dpi, dpi))
+            results.append((f"{name}_{i + 1}.{fmt}", buf.getvalue()))
+            page.close()
+    finally:
+        doc.close()
+    return send_results(results, f"{name}_images.zip")
+
+
+# ---------- routes: edit ----------
+
+@app.post("/api/rotate")
+def rotate():
+    angle = int(request.form.get("angle", 90))
+    if angle not in (90, 180, 270):
+        raise ToolError("Rotation must be 90, 180 or 270 degrees.")
+
+    def process(pdf):
+        for page in pdf.pages:
+            page.rotate(angle, relative=True)
+        return pdf_bytes(pdf)
+    return for_each_pdf("rotated", process)
+
+
+@app.post("/api/watermark")
+def watermark():
+    text = request.form.get("text", "").strip()
+    if not text:
+        raise ToolError("Enter the watermark text.")
+    position = request.form.get("position", "diagonal")
+    if position not in ("center", "diagonal", "tiled", "top", "bottom"):
+        raise ToolError("Unknown watermark position.")
+    size = form_float("size", 60, 8, 200)
+    opacity = form_float("opacity", 30, 5, 100) / 100
+    try:
+        color = HexColor(request.form.get("color", "#e0443a"))
+    except ValueError:
+        raise ToolError("Invalid colour.")
+    font = "Helvetica-Bold"
+    unit = stringWidth(text, font, 1) or 1  # text width at font size 1
+
+    def draw(c, w, h, _i, _n):
+        c.setFillColor(color)
+        c.setFillAlpha(opacity)
+        if position in ("center", "top", "bottom"):
+            s = min(size, w * 0.9 / unit)
+            c.setFont(font, s)
+            y = {"center": h / 2 - s * 0.35, "top": h - 15 * MM - s * 0.7, "bottom": 15 * MM}[position]
+            c.drawCentredString(w / 2, y, text)
+        elif position == "diagonal":
+            s = min(size, math.hypot(w, h) * 0.8 / unit)
+            c.setFont(font, s)
+            c.translate(w / 2, h / 2)
+            c.rotate(math.degrees(math.atan2(h, w)))
+            c.drawCentredString(0, -s * 0.35, text)
+        else:  # tiled
+            c.setFont(font, size)
+            c.translate(w / 2, h / 2)
+            c.rotate(35)
+            step_x, step_y = unit * size + size * 2, size * 4
+            reach = math.hypot(w, h) / 2 + step_x
+            y, row = -reach, 0
+            while y <= reach:
+                x = -reach + (row % 2) * step_x / 2
+                while x <= reach:
+                    c.drawCentredString(x, y, text)
+                    x += step_x
+                y += step_y
+                row += 1
+
+    return for_each_pdf("watermarked", lambda pdf: pdf_bytes(add_overlays(pdf, draw)))
+
+
+@app.post("/api/page-numbers")
+def page_numbers():
+    vpos, _, hpos = request.form.get("position", "bottom-center").partition("-")
+    if vpos not in ("top", "bottom") or hpos not in ("left", "center", "right"):
+        raise ToolError("Unknown position.")
+    template = PAGE_NUMBER_FORMATS.get(request.form.get("format", "n"))
+    if not template:
+        raise ToolError("Unknown number format.")
+    start = int(form_float("start", 1, 0, 100000))
+    size = form_float("size", 11, 6, 48)
+    skip_first = form_flag("skip_first")
+    margin = 12 * MM
+    font = "Helvetica"
+
+    def draw(c, w, h, i, n):
+        if skip_first and i == 0:
+            return
+        offset = 1 if skip_first else 0
+        label = template.format(n=start + i - offset, total=start + n - offset - 1)
+        c.setFont(font, size)
+        c.setFillColor(HexColor("#222222"))
+        y = margin if vpos == "bottom" else h - margin - size * 0.7
+        if hpos == "left":
+            c.drawString(margin, y, label)
+        elif hpos == "right":
+            c.drawRightString(w - margin, y, label)
+        else:
+            c.drawCentredString(w / 2, y, label)
+
+    return for_each_pdf("numbered", lambda pdf: pdf_bytes(add_overlays(pdf, draw)))
+
+
+@app.post("/api/crop")
+def crop():
+    """Trim margins (mm, as seen on screen: top/right/bottom/left) from every page."""
+    visual = [form_float(k, 0, 0, 500) * MM for k in ("top", "right", "bottom", "left")]
+    if not any(visual):
+        raise ToolError("Set at least one margin to crop.")
+
+    def process(pdf):
+        for page in pdf.pages:
+            x0, y0, x1, y1 = page_box(page)
+            k = page_rotation(page) // 90
+            # Map the on-screen sides onto the unrotated page's sides.
+            top, right, bottom, left = (visual[(i + k) % 4] for i in range(4))
+            box = [x0 + left, y0 + bottom, x1 - right, y1 - top]
+            if box[2] - box[0] < 36 or box[3] - box[1] < 36:
+                raise ToolError("Those margins are larger than the page. Use smaller values.")
+            page.obj.CropBox = pikepdf.Array(box)
+        return pdf_bytes(pdf)
+    return for_each_pdf("cropped", process)
+
+
+@app.post("/api/metadata")
+def metadata():
+    remove_all = form_flag("remove_all")
+    fields = {
+        "/Title": ("dc:title", request.form.get("title", "").strip()),
+        "/Author": ("dc:creator", request.form.get("author", "").strip()),
+        "/Subject": ("dc:description", request.form.get("subject", "").strip()),
+        "/Keywords": ("pdf:Keywords", request.form.get("keywords", "").strip()),
+    }
+
+    def process(pdf):
+        if remove_all:
+            if "/Metadata" in pdf.Root:
+                del pdf.Root.Metadata
+            pdf.trailer.Info = pdf.make_indirect(pikepdf.Dictionary())
+            return pdf_bytes(pdf)
+        # Keep the XMP packet and the document info dictionary in sync.
+        with pdf.open_metadata(set_pikepdf_as_editor=False, update_docinfo=False) as meta:
+            for prop, value in fields.values():
+                if value:
+                    meta[prop] = [value] if prop == "dc:creator" else value
+                elif prop in meta:
+                    del meta[prop]
+        for key, (_prop, value) in fields.items():
+            if value:
+                pdf.docinfo[key] = value
+            elif key in pdf.docinfo:
+                del pdf.docinfo[key]
+        return pdf_bytes(pdf)
+
+    return for_each_pdf("cleaned" if remove_all else "edited", process)
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
-    print(f"\n  PDFKit running at http://127.0.0.1:{port}\n")
+    print(f"\n  pdforge running at http://127.0.0.1:{port}\n")
     app.run(host="127.0.0.1", port=port, debug=False)
