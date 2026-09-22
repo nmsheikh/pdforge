@@ -220,8 +220,10 @@ def handle_too_large(_err):
 RELEASES = "https://github.com/nmsheikh/pdforge/releases"
 RELEASES_PAGE = f"{RELEASES}/latest"
 RELEASES_API = "https://api.github.com/repos/nmsheikh/pdforge/releases/latest"
-# Bump this with each desktop release (desktop/package.json, tauri.conf.json, Cargo.toml).
-APP_VERSION = "3.1.6"
+# The newest release whose installers are all published. The release workflow
+# updates this once every platform has built, so the links below are never
+# pointed at files that don't exist yet.
+APP_VERSION = "3.1.5"
 # Installer file names produced by the GitHub Actions release build (Tauri).
 DOWNLOAD_PATTERNS = {
     "mac-arm": r"_aarch64\.dmg$",
@@ -236,6 +238,16 @@ DOWNLOAD_FILES = {
     "linux": f"pdforge_{APP_VERSION}_amd64.deb",
 }
 _release_cache = {"at": 0.0, "assets": []}
+
+
+def asset_exists(url):
+    """True if GitHub really serves this file (a build may still be running)."""
+    try:
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "pdforge"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def latest_release_assets():
@@ -264,7 +276,9 @@ def download(platform):
     for asset in latest_release_assets():
         if re.search(pattern, asset.get("name", "")):
             return redirect(asset["browser_download_url"])
-    return redirect(f"{RELEASES}/download/v{APP_VERSION}/{DOWNLOAD_FILES[platform]}")
+    # No API answer: use the pinned release, but only if the file is really there.
+    pinned = f"{RELEASES}/download/v{APP_VERSION}/{DOWNLOAD_FILES[platform]}"
+    return redirect(pinned if asset_exists(pinned) else RELEASES_PAGE)
 
 
 @app.route("/")
