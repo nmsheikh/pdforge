@@ -59,5 +59,5 @@ To try the in-browser engine on the website locally, open http://127.0.0.1:5050/
 ./run.sh
 ```
 
-Then open http://127.0.0.1:5050. The hosted version at https://pdforge-brown.vercel.app limits uploads to 4 MB (a Vercel limit) and points larger files to the desktop app. The first run creates a `.venv` and installs the dependencies (Flask, pikepdf, pypdfium2, Pillow, reportlab).
+Then open http://127.0.0.1:5050. The hosted version at https://pdforge-nms.vercel.app limits uploads to 4 MB (a Vercel limit) and points larger files to the desktop app. The first run creates a `.venv` and installs the dependencies (Flask, pikepdf, pypdfium2, Pillow, reportlab).
 Use `PORT=8000 ./run.sh` to run it on a different port.
