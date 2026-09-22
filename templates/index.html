@@ -13,13 +13,16 @@
     <img class="logo" src="{{ url_for('static', filename='logo.svg') }}" alt="" width="40" height="40"><span>pdforge</span>
   </a>
   <nav class="quicknav" id="quickNav" aria-label="Popular tools"></nav>
-  <button class="get-app web-only" id="getAppBtn"><span class="wide-only">Download</span><span class="narrow-only">Get</span> app</button>
-  <button class="desktop-nudge web-only" id="nudgeBtn" aria-label="Big files? Use pdforge on a computer"><span>Big files?</span><span>Use a computer</span></button>
-  <div class="menu-wrap">
-    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="megaMenu">
-      All tools <span class="chev" aria-hidden="true">▾</span>
-    </button>
-    <div class="mega" id="megaMenu" hidden></div>
+  <div class="bar-actions">
+    <div class="menu-wrap">
+      <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="megaMenu">
+        All tools
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="mega" id="megaMenu" hidden></div>
+    </div>
+    <button class="get-app web-only" id="getAppBtn"><span class="wide-only">Download</span><span class="narrow-only">Get</span> app</button>
+    <button class="desktop-nudge web-only" id="nudgeBtn" aria-label="Big files? Use pdforge on a computer"><span>Big files?</span><span>Use a computer</span></button>
   </div>
 </header>
 
