@@ -71,12 +71,16 @@ const TOOLS = [
   // Organize
   {
     id: "merge", category: "organize", title: "Merge PDF",
+    guard: (_info, files) => (files.length < 2 ? "Merging needs at least two PDFs. Add one more file below." : null),
     desc: "Combine several PDFs into one, in the order you choose.",
     endpoint: "/api/merge", multiple: true, ordered: true, button: "Merge PDFs",
     validate: () => (files.length < 2 ? "Add at least two PDFs to merge." : null),
   },
   {
     id: "split", category: "organize", title: "Split PDF",
+    guard: (info) => (info.pages === 1
+      ? "This PDF has only one page, so there is nothing to split. Merge it with another PDF first, or use Select pages on a longer file."
+      : null),
     desc: "Split every page into its own PDF, or pull out specific page ranges.",
     endpoint: "/api/split", button: "Split PDF",
     options: (info) => `
@@ -108,6 +112,7 @@ const TOOLS = [
   },
   {
     id: "organize", category: "organize", title: "Organize PDF", isNew: true,
+    guard: (info) => (info.pages === 1 ? "This PDF has only one page, so there is nothing to reorder. You can still rotate it with Rotate PDF." : null),
     desc: "Reorder pages by dragging, rotate or delete single pages, and insert blank pages.",
     endpoint: "/api/organize", wide: true, button: "Save changes",
     options: () => `
@@ -288,12 +293,14 @@ const TOOLS = [
   // Security
   {
     id: "unlock", category: "security", title: "Unlock PDF",
+    guard: (info, files) => (info.encrypted ? null
+      : `${files.length > 1 ? "None of these PDFs is" : "This PDF isn't"} password-protected, so there is nothing to unlock.`),
     desc: "Remove the password from PDFs. Enter the password once and download unlocked copies.",
     endpoint: "/api/unlock", multiple: true, ownPassword: true, button: "Unlock PDF",
-    options: (info) => info.encrypted
+    options: (info) => (info.encrypted
       ? field("PDF password", passwordInput("password"),
         files.length > 1 ? "Used for every protected file you uploaded." : "")
-      : `<p class="note">${files.length > 1 ? "None of these PDFs is" : "This PDF isn't"} password-protected. You can still process ${files.length > 1 ? "them" : "it"} to get a clean copy.</p>`,
+      : ""),
     validate: (fd, info) => (info.encrypted && !fd.get("password") ? "Enter the PDF password." : null),
   },
   {
@@ -367,7 +374,6 @@ async function postForm(url, fd) {
 function toolCard(t) {
   return `<a class="tool cat-${t.category}" href="#${t.id}" data-cat="${t.category}">
     <div class="icon">${icon(t.id)}</div>
-    ${t.isNew ? '<span class="new">New</span>' : ""}
     <h3>${esc(t.title)}</h3>
     <p>${esc(t.desc)}</p>
   </a>`;
@@ -481,8 +487,8 @@ async function addFiles(list) {
   }
   summarize();
   renderFileList();
-  // Re-render the options only when needed, so typed values survive "Add more".
-  if (firstRender || wasEncrypted !== !!info.encrypted) renderOptions();
+  // Re-render the options when the file set changes in a way the options depend on.
+  if (firstRender || wasEncrypted !== !!info.encrypted || guardMessage() || $("runBtn").hidden) renderOptions();
   show("stepOptions");
 }
 
@@ -545,7 +551,7 @@ function renderFileList() {
     if (!files.length) return reset();
     summarize();
     renderFileList();
-    if (wasEncrypted !== info.encrypted) renderOptions();
+    renderOptions();
   }));
   list.querySelectorAll("[data-expand]").forEach((b) =>
     b.addEventListener("click", () => openPreview(+b.dataset.expand)));
@@ -586,6 +592,19 @@ async function loadFileThumbs() {
   }
 }
 
+// A tool can refuse a file up front (one-page split, unlocking an open PDF, …).
+function guardMessage() {
+  if (!files.length) return null;
+  const pages = fileInfo.map((f) => f.pages).filter((n) => n !== null && n !== undefined);
+  if (pages.length && pages.every((n) => n === 0)) return "This PDF has no pages.";
+  return (tool.guard && tool.guard(info, files)) || null;
+}
+
+function guardNotice() {
+  const msg = guardMessage();
+  return msg ? `<p class="note blocked"><strong>This tool can't run on this file</strong>${esc(msg)}</p>` : "";
+}
+
 function renderOptions() {
   const pwField = info.encrypted && !tool.ownPassword
     ? field(files.length > 1 ? "Password for the protected files" : "PDF password",
@@ -605,14 +624,20 @@ function renderOptions() {
         <p class="hint">The downloaded file will need this password to open (AES-256).</p>
       </div>
     </div>` : "";
-  const controls = pwField + (tool.options ? tool.options(info) : "") + protectSection;
+  // When a tool can't run on these files, show only the reason - no options to fiddle with.
+  const blocked = guardMessage();
+  const controls = blocked
+    ? guardNotice()
+    : pwField + (tool.options ? tool.options(info) : "") + protectSection;
   $("options").innerHTML = tool.preview
     ? `<div class="opt-grid"><div class="preview" id="preview">
          <div class="pv-page" id="pvPage"><img id="pvImg" alt="Preview of page 1"><div class="pv-layer" id="pvLayer"></div></div>
          <p class="hint center" id="pvNote">Loading preview…</p></div>
        <div class="controls">${controls}</div></div>`
     : controls;
-  $("stepOptions").classList.toggle("wide", !!(tool.wide || tool.preview));
+  $("stepOptions").classList.toggle("wide", !blocked && !!(tool.wide || tool.preview));
+  $("runBtn").hidden = !!blocked;
+  $("resetBtn").textContent = blocked ? "Choose another file" : "Cancel";
   $("runBtn").textContent = (typeof tool.button === "function" ? tool.button(info) : tool.button) || "Process";
   showError("");
 
@@ -623,6 +648,7 @@ function renderOptions() {
   }));
   const uploadPw = $("options").querySelector('input[name="password"]');
   if (uploadPw) uploadPw.addEventListener("change", () => { if (fileView === "grid") renderFileList(); });
+  if (blocked) return;
   const protectBox = $("options").querySelector('input[name="protect_result"]');
   if (protectBox) {
     protectBox.dataset.ui = "1";
@@ -959,6 +985,8 @@ function collect() {
 }
 
 async function run() {
+  const blocked = guardMessage();
+  if (blocked) return showError(blocked);
   const fd = collect();
   const wantProtect = !!$("options").querySelector('input[name="protect_result"]:checked');
   const resultPw = wantProtect ? $("resultPw").value : "";

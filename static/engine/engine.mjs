@@ -134,11 +134,11 @@ const repairBytes = (bytes) => qpdf(["{in}", "{out}"], bytes);
 
 const isEncryptedError = (e) => e instanceof EncryptedPDFError || /encrypted/i.test(e?.message || "");
 
-// Returns { doc, bytes } where bytes are the (decrypted) PDF the doc was parsed from.
+// Returns { doc, bytes, encrypted }; bytes are the (decrypted) PDF the doc was parsed from.
 async function openPdf(file, password = "") {
   let bytes = new Uint8Array(await file.arrayBuffer());
   try {
-    return { doc: await PDFDocument.load(bytes, LOAD), bytes };
+    return { doc: await PDFDocument.load(bytes, LOAD), bytes, encrypted: false };
   } catch (e) {
     if (isEncryptedError(e)) {
       // Files with only print/copy restrictions open with an empty password.
@@ -148,12 +148,12 @@ async function openPdf(file, password = "") {
           ? `Incorrect password for '${file.name}'.`
           : `'${file.name}' is password-protected. Enter its password first.`);
       }
-      return { doc: await PDFDocument.load(plain, LOAD), bytes: plain };
+      return { doc: await PDFDocument.load(plain, LOAD), bytes: plain, encrypted: true };
     }
     // Damaged or unusual file: let qpdf rebuild it, then try again.
     const fixed = await repairBytes(bytes);
     if (fixed) {
-      try { return { doc: await PDFDocument.load(fixed, LOAD), bytes: fixed }; } catch (_) {}
+      try { return { doc: await PDFDocument.load(fixed, LOAD), bytes: fixed, encrypted: false }; } catch (_) {}
     }
     throw new ToolError(`'${file.name}' is not a valid PDF file.`);
   }
@@ -326,7 +326,8 @@ async function thumbnails(fd) {
 async function unlock(fd) {
   const results = [];
   for (const f of pdfFiles(fd)) {
-    const { bytes } = await openPdf(f, str(fd, "password")); // decrypted bytes
+    const { bytes, encrypted } = await openPdf(f, str(fd, "password")); // decrypted bytes
+    if (!encrypted) throw new ToolError(`'${f.name}' isn't password-protected, so there is nothing to unlock.`);
     results.push([`${baseName(f.name)}_unlocked.pdf`, bytes]);
   }
   return sendResults(results, "unlocked.zip");
@@ -394,6 +395,7 @@ async function split(fd) {
   const src = await loadPdf(f, str(fd, "password"));
   const name = baseName(f.name);
   const n = src.getPageCount();
+  if (n < 2) throw new ToolError("This PDF has only one page, so there is nothing to split.");
   const groups = str(fd, "mode", "all") === "all"
     ? Array.from({ length: n }, (_, i) => [i])
     : parseRanges(str(fd, "ranges"), n);
@@ -428,7 +430,8 @@ async function organize(fd) {
   try { plan = JSON.parse(str(fd, "plan", "[]")); } catch (_) { throw new ToolError("Invalid page plan."); }
   if (!Array.isArray(plan) || !plan.length) throw new ToolError("The document needs at least one page.");
 
-  const blankSize = n ? visualSize(src.getPage(0)) : [612, 792];
+  if (!n) throw new ToolError("This PDF has no pages.");
+  const blankSize = visualSize(src.getPage(0));
   const out = await PDFDocument.create();
   for (const item of plan) {
     let page;

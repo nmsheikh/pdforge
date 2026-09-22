@@ -221,7 +221,7 @@ RELEASES = "https://github.com/nmsheikh/pdforge/releases"
 RELEASES_PAGE = f"{RELEASES}/latest"
 RELEASES_API = "https://api.github.com/repos/nmsheikh/pdforge/releases/latest"
 # Bump this with each desktop release (desktop/package.json, tauri.conf.json, Cargo.toml).
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.1.1"
 # Installer file names produced by the GitHub Actions release build (Tauri).
 DOWNLOAD_PATTERNS = {
     "mac-arm": r"_aarch64\.dmg$",
@@ -340,7 +340,14 @@ def thumbnails():
 
 @app.post("/api/unlock")
 def unlock():
-    return for_each_pdf("unlocked", lambda pdf: pdf_bytes(pdf, encryption=False))
+    files = pdf_files()
+    results = []
+    for f in files:
+        pdf = open_pdf(f, form_password())
+        if not pdf.is_encrypted:
+            raise ToolError(f"'{f.filename}' isn't password-protected, so there is nothing to unlock.")
+        results.append((f"{base_name(f.filename)}_unlocked.pdf", pdf_bytes(pdf, encryption=False)))
+    return send_results(results, "unlocked.zip")
 
 
 @app.post("/api/protect")
@@ -413,6 +420,8 @@ def split():
     pdf = open_pdf(f, form_password())
     name = base_name(f.filename)
     n = len(pdf.pages)
+    if n < 2:
+        raise ToolError("This PDF has only one page, so there is nothing to split.")
     mode = request.form.get("mode", "all")
     groups = [[i] for i in range(n)] if mode == "all" else parse_ranges(request.form.get("ranges"), n)
 
@@ -461,7 +470,9 @@ def organize():
     if not isinstance(plan, list) or not plan:
         raise ToolError("The document needs at least one page.")
 
-    blank_size = visual_size(pdf.pages[0]) if n else (612, 792)
+    if not n:
+        raise ToolError("This PDF has no pages.")
+    blank_size = visual_size(pdf.pages[0])
     out = pikepdf.new()
     for item in plan:
         if item.get("blank"):
