@@ -223,7 +223,7 @@ RELEASES_API = "https://api.github.com/repos/nmsheikh/pdforge/releases/latest"
 # The newest release whose installers are all published. The release workflow
 # updates this once every platform has built, so the links below are never
 # pointed at files that don't exist yet.
-APP_VERSION = "3.2.3"
+APP_VERSION = "3.2.4"
 # Installer file names produced by the GitHub Actions release build (Tauri).
 DOWNLOAD_PATTERNS = {
     "mac-arm": r"_aarch64\.dmg$",
