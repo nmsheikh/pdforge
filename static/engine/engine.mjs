@@ -35,6 +35,8 @@ function pdfFiles(fd) {
   return files;
 }
 
+const isPdfLike = (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+
 const str = (fd, name, dflt = "") => (fd.get(name) ?? dflt).toString();
 const flag = (fd, name) => ["1", "true", "on"].includes(str(fd, name));
 function num(fd, name, dflt, lo, hi) {
@@ -743,6 +745,164 @@ async function metadata(fd) {
   });
 }
 
+// ---------- OCR (arrange-by-date tool) ----------
+// Desktop-only: this is the one tool with no Flask/app.py equivalent. OCR needs
+// real pixel-reading, which none of the server's or client's PDF libraries do,
+// and tesseract.js is loaded lazily here so no other tool ever fetches it.
+
+let ocrWorkerPromise;
+function loadOcrWorker() {
+  return (ocrWorkerPromise ||= (async () => {
+    const { createWorker, OEM } = (await import("../vendor/tesseract.esm.min.js")).default;
+    return createWorker("eng", OEM.LSTM_ONLY, {
+      workerPath: new URL("../vendor/tesseract-worker.min.js", import.meta.url).href,
+      corePath: new URL("../vendor/tesseract-core-simd-lstm.js", import.meta.url).href,
+      langPath: new URL("../vendor/", import.meta.url).href,
+      cacheMethod: "none",
+      gzip: true,
+      // Not a blob-wrapped worker: the core's wasm loader resolves its .wasm file
+      // relative to the worker script's own URL, which only works when that URL is
+      // a real same-origin path (blob: URLs break that relative resolution).
+      workerBlobURL: false,
+      logger: () => {},
+    });
+  })());
+}
+
+function rotateCanvas(canvas, angle) {
+  if (!angle) return canvas;
+  const swap = angle % 180 !== 0;
+  const out = document.createElement("canvas");
+  out.width = swap ? canvas.height : canvas.width;
+  out.height = swap ? canvas.width : canvas.height;
+  const ctx = out.getContext("2d");
+  ctx.translate(out.width / 2, out.height / 2);
+  ctx.rotate((angle * Math.PI) / 180);
+  ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+  return out;
+}
+
+const MONTHS = {
+  jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4,
+  jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8,
+  oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+};
+
+// Best-effort: pull the first recognizable date out of noisy OCR text. Returns a
+// Date, or null. No date in the text is a normal outcome (blank page, no date visible).
+function extractDate(text) {
+  const t = (text || "").replace(/\s+/g, " ");
+  const validDay = (d) => d >= 1 && d <= 31;
+  const build = (year, month, day) => {
+    if (!validDay(day) || month < 0 || month > 11) return null;
+    const d = new Date(year, month, day);
+    return d.getMonth() === month ? d : null; // rejects e.g. 31 Feb rolling into March
+  };
+  let m = t.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s*(\d{4})?\b/);
+  if (m && MONTHS[m[2].toLowerCase()] !== undefined) {
+    const date = build(m[3] ? +m[3] : new Date().getFullYear(), MONTHS[m[2].toLowerCase()], +m[1]);
+    if (date) return date;
+  }
+  m = t.match(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\b/);
+  if (m && MONTHS[m[1].toLowerCase()] !== undefined) {
+    const date = build(m[3] ? +m[3] : new Date().getFullYear(), MONTHS[m[1].toLowerCase()], +m[2]);
+    if (date) return date;
+  }
+  m = t.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
+  if (m) {
+    const date = build(+m[1], +m[2] - 1, +m[3]);
+    if (date) return date;
+  }
+  m = t.match(/\b(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})\b/);
+  if (m) {
+    let year = +m[3];
+    if (year < 100) year += year < 50 ? 2000 : 1900;
+    // Day-first (DD/MM/YYYY) unless the first number can't be a month, in which case
+    // it must be interpreted month-first instead.
+    const date = build(year, +m[2] - 1, +m[1]) || build(year, +m[1] - 1, +m[2]);
+    if (date) return date;
+  }
+  return null;
+}
+
+// Try the page upright, then rotated, until a date is found - this solves both
+// "what's the date" and "which way is up" in the same OCR pass.
+async function findDateAndRotation(canvas) {
+  const worker = await loadOcrWorker();
+  for (const angle of [0, 90, 180, 270]) {
+    const { data } = await worker.recognize(rotateCanvas(canvas, angle));
+    const date = extractDate(data.text);
+    if (date) return { date, rotation: angle };
+  }
+  return { date: null, rotation: 0 };
+}
+
+function reportProgress(message) {
+  window.dispatchEvent(new CustomEvent("pdforge:progress", { detail: { message } }));
+}
+
+async function arrangeByDate(fd) {
+  const files = fd.getAll("files").filter((f) => f && f.name);
+  if (!files.length) throw new ToolError("Add at least one PDF or image.");
+  for (const f of files) {
+    if (!isPdfLike(f) && !f.type.startsWith("image/")) throw new ToolError(`'${f.name}' isn't a PDF or an image.`);
+  }
+
+  // Pass 1: OCR every page/image to find its date and correct rotation.
+  const records = []; // { kind, file, pageIndex?, date, rotation, order }
+  let doneUnits = 0;
+  for (const f of files) {
+    if (isPdfLike(f)) {
+      const pdfjsDoc = await openPdfjs(f, "");
+      try {
+        for (let i = 1; i <= pdfjsDoc.numPages; i++) {
+          reportProgress(`Reading dates… ${doneUnits + 1} so far (${f.name}, page ${i}/${pdfjsDoc.numPages})`);
+          const page = await pdfjsDoc.getPage(i);
+          const canvas = await renderPage(page, 200 / 72);
+          const { date, rotation } = await findDateAndRotation(canvas);
+          canvas.width = canvas.height = 0;
+          page.cleanup();
+          records.push({ kind: "pdfpage", file: f, pageIndex: i - 1, date, rotation, order: doneUnits++ });
+        }
+      } finally {
+        closePdfjs(pdfjsDoc);
+      }
+    } else {
+      reportProgress(`Reading dates… ${doneUnits + 1} so far (${f.name})`);
+      const bitmap = await createImageBitmap(f, { imageOrientation: "from-image" });
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      const { date, rotation } = await findDateAndRotation(canvas);
+      records.push({ kind: "image", file: f, canvas, date, rotation, order: doneUnits++ });
+    }
+  }
+
+  // Dated pages first in chronological order; dateless pages keep their original
+  // place at the end, so nothing is silently dropped from the result.
+  records.sort((a, b) => (a.date && b.date ? a.date - b.date : a.date ? -1 : b.date ? 1 : a.order - b.order));
+
+  reportProgress("Putting the pages together…");
+  const out = await PDFDocument.create();
+  const srcDocs = new Map(); // source PDF file -> loaded pdf-lib document (reused across its pages)
+  for (const r of records) {
+    if (r.kind === "pdfpage") {
+      let src = srcDocs.get(r.file);
+      if (!src) { src = await loadPdf(r.file, ""); srcDocs.set(r.file, src); }
+      const [page] = await out.copyPages(src, [r.pageIndex]);
+      out.addPage(page);
+      if (r.rotation) page.setRotation(degrees((pageRotation(page) + r.rotation) % 360));
+    } else {
+      const canvas = rotateCanvas(r.canvas, r.rotation);
+      const img = await out.embedPng(await canvasBytes(canvas, "image/png"));
+      const w = (img.width * 72) / 100, h = (img.height * 72) / 100;
+      out.addPage([w, h]).drawImage(img, { x: 0, y: 0, width: w, height: h });
+    }
+  }
+  return sendBytes(await save(out), "arranged.pdf");
+}
+
 // ---------- router ----------
 
 const ROUTES = {
@@ -763,6 +923,7 @@ const ROUTES = {
   "/api/page-numbers": pageNumbers,
   "/api/crop": crop,
   "/api/metadata": metadata,
+  "/api/arrange-by-date": arrangeByDate,
 };
 
 export async function handle(url, fd) {

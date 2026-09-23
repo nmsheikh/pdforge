@@ -3,6 +3,7 @@
 import { handle } from "./engine/engine.mjs";
 import { PDFDocument, StandardFonts, degrees } from "./vendor/pdf-lib.esm.min.js";
 import { unzipSync } from "./vendor/fflate.mjs";
+import * as pdfjs from "./vendor/pdf.min.mjs";
 
 const report = { userAgent: navigator.userAgent, tauri: !!window.__TAURI__?.core?.invoke, results: [] };
 const check = (name, ok, detail = "") => report.results.push({ name, ok: !!ok, detail: String(detail) });
@@ -33,6 +34,25 @@ async function makePdf(pages = 10, { rotateSecond = false, withPhoto = false } =
 }
 
 const asFile = (bytes, name, type = "application/pdf") => new File([bytes], name, { type });
+
+// A photo/scan with a printed date, optionally sideways - for the arrange-by-date OCR test.
+async function makeDatedImage(dateText, rotateDeg = 0) {
+  const w = 400, h = 300;
+  const c = document.createElement("canvas");
+  c.width = rotateDeg % 180 ? h : w;
+  c.height = rotateDeg % 180 ? w : h;
+  const ctx = c.getContext("2d");
+  ctx.save();
+  ctx.translate(c.width / 2, c.height / 2);
+  ctx.rotate((rotateDeg * Math.PI) / 180);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.fillStyle = "#000";
+  ctx.font = "bold 32px sans-serif";
+  ctx.fillText(dateText, -w / 2 + 20, -h / 2 + 60);
+  ctx.restore();
+  return new Uint8Array(await (await new Promise((r) => c.toBlob(r, "image/png"))).arrayBuffer());
+}
 
 async function call(url, fields, files) {
   const fd = new FormData();
@@ -134,6 +154,41 @@ async function runEngine() {
 
   r = await call("/api/metadata", { title: "Hello", author: "Me" }, [asFile(ten, "a.pdf")]);
   check("metadata", (await PDFDocument.load(r.body, { updateMetadata: false })).getTitle() === "Hello");
+
+  // Mixed PDF + images, out of order, one sideways, one with no date at all.
+  const datedPdf = await PDFDocument.create();
+  const dpFont = await datedPdf.embedFont(StandardFonts.HelveticaBold);
+  datedPdf.addPage([400, 300]).drawText("2 January 2026", { x: 20, y: 240, size: 28, font: dpFont });
+  r = await call("/api/arrange-by-date", {}, [
+    asFile(await datedPdf.save(), "b.pdf", "application/pdf"),
+    asFile(await makeDatedImage("1 January 2026"), "a.png", "image/png"),
+    asFile(await makeDatedImage("3 January 2026", 90), "c.png", "image/png"), // sideways
+    asFile(await makeDatedImage(""), "d.png", "image/png"), // no date -> should still appear, at the end
+  ]);
+  const arranged = r.status === 200 ? await PDFDocument.load(r.body) : null;
+  check("arrange by date: all pages kept, none dropped", arranged?.getPageCount() === 4, `${r.ms}ms ${r.body?.error || ""}`);
+  check("arrange by date: sideways page straightened", arranged && arranged.getPage(2).getWidth() < arranged.getPage(2).getHeight());
+  if (arranged) {
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdf.worker.min.mjs", import.meta.url).href;
+    const raster = await pdfjs.getDocument({ data: await arranged.save() }).promise;
+    const worker = await (await import("./vendor/tesseract.esm.min.js")).default.createWorker("eng", 1, {
+      workerPath: new URL("./vendor/tesseract-worker.min.js", import.meta.url).href,
+      corePath: new URL("./vendor/tesseract-core-simd-lstm.js", import.meta.url).href,
+      langPath: new URL("./vendor/", import.meta.url).href,
+      cacheMethod: "none", gzip: true, workerBlobURL: false, logger: () => {},
+    });
+    const read = [];
+    for (let i = 1; i <= 3; i++) {
+      const page = await raster.getPage(i);
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width; canvas.height = viewport.height;
+      await page.render({ canvas, canvasContext: canvas.getContext("2d"), viewport }).promise;
+      read.push((await worker.recognize(canvas)).data.text);
+    }
+    await worker.terminate();
+    check("arrange by date: chronological order", /1 January/.test(read[0]) && /2 January/.test(read[1]) && /3 January/.test(read[2]), read.join(" | "));
+  }
 }
 
 const errors = [];
@@ -144,7 +199,7 @@ const until = async (fn, ms = 10000) => { for (let t = 0; t < ms; t += 100) { if
 
 // Drive the real interface (app.js globals) the way a user would.
 async function runUi() {
-  check("UI: home shows 15 tools", document.querySelectorAll("#toolGrid .tool").length === 15);
+  check("UI: home shows 16 tools", document.querySelectorAll("#toolGrid .tool").length === 16);
   check("UI: web-only Download button hidden in app", getComputedStyle(document.getElementById("getAppBtn")).display === "none");
   document.getElementById("menuBtn").click();
   check("UI: All tools menu opens", !document.getElementById("megaMenu").hidden);

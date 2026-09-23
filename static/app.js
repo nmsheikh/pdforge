@@ -24,6 +24,7 @@ const ICONS = {
   crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
   metadata: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/>',
   unlock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+  "arrange-by-date": '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
   protect: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   // interface controls
   arrowUp: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
@@ -148,6 +149,12 @@ const TOOLS = [
       <div class="pages org" id="pageGrid"></div>`,
     afterRender: () => initOrganizer(),
     validate: (fd) => (JSON.parse(fd.get("plan") || "[]").length ? null : "The document needs at least one page."),
+  },
+  {
+    id: "arrange-by-date", category: "organize", title: "Arrange by date", isNew: true,
+    guard: () => (!LOCAL ? "This tool reads the date on each page by running OCR on your device, so it only works in the desktop app." : null),
+    desc: "Drop in PDFs and photos with a date on each page, and get one PDF with everything in date order, upright.",
+    endpoint: "/api/arrange-by-date", accept: "application/pdf,image/*", multiple: true, button: "Arrange by date",
   },
 
   // Optimize
@@ -375,6 +382,10 @@ function showError(msg) {
   $("errorMsg").hidden = !msg;
 }
 let engine = null;
+// Slow tools (e.g. OCR) report progress this way; postForm() otherwise awaits in one shot.
+window.addEventListener("pdforge:progress", (e) => {
+  if (!$("stepWorking").hidden) $("workingMsg").textContent = e.detail.message;
+});
 async function postForm(url, fd) {
   if (LOCAL) engine ||= await import("./engine/engine.mjs");
   const res = LOCAL ? await engine.handle(url, fd) : await fetch(url, { method: "POST", body: fd });
@@ -443,9 +454,10 @@ function route() {
   $("workspace").className = `cat-${t.category}`;
   $("toolTitle").textContent = t.title;
   $("toolDesc").textContent = t.desc;
+  const mixed = t.accept === "application/pdf,image/*";
   $("fileInput").accept = t.accept || "application/pdf,.pdf";
   $("fileInput").multiple = !!t.multiple;
-  $("dzMain").textContent = t.accept ? "Select images" : t.multiple ? "Select PDF files" : "Select PDF file";
+  $("dzMain").textContent = mixed ? "Select PDFs and images" : t.accept ? "Select images" : t.multiple ? "Select PDF files" : "Select PDF file";
   $("dzSub").textContent = t.multiple
     ? `or drop them here. You can add several at once.`
     : `or drop it here. ${t.title} works on one ${t.accept ? "image" : "PDF"} at a time.`;
@@ -474,14 +486,16 @@ function reset() {
 
 // ---------- upload & inspect ----------
 const isPdf = (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+const isImageFile = (f) => f.type.startsWith("image/") || /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f.name);
 
 async function addFiles(list) {
   let incoming = Array.from(list);
   if (!incoming.length) return;
+  const mixed = tool.accept === "application/pdf,image/*";
   const wantPdf = !tool.accept;
-  const rejected = incoming.filter((f) => (wantPdf ? !isPdf(f) : !f.type.startsWith("image/")));
+  const rejected = incoming.filter((f) => (mixed ? !isPdf(f) && !isImageFile(f) : wantPdf ? !isPdf(f) : !f.type.startsWith("image/")));
   incoming = incoming.filter((f) => !rejected.includes(f));
-  if (rejected.length) warnOnDropzone(`Skipped ${rejected.map((f) => f.name).join(", ")}: not ${wantPdf ? "a PDF" : "an image"}.`);
+  if (rejected.length) warnOnDropzone(`Skipped ${rejected.map((f) => f.name).join(", ")}: not ${mixed ? "a PDF or image" : wantPdf ? "a PDF" : "an image"}.`);
   if (!incoming.length) return;
 
   if (!tool.multiple && incoming.length > 1) {
