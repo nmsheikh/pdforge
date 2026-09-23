@@ -782,6 +782,20 @@ function rotateCanvas(canvas, angle) {
   return out;
 }
 
+// A small preview image for the review grid - separate from the full-resolution
+// canvas used for OCR, so the JSON response stays a reasonable size.
+function canvasThumb(canvas, maxWidth = THUMB_WIDTH) {
+  const scale = Math.min(1, maxWidth / canvas.width);
+  const w = Math.max(1, Math.round(canvas.width * scale)), h = Math.max(1, Math.round(canvas.height * scale));
+  const out = document.createElement("canvas");
+  out.width = w;
+  out.height = h;
+  out.getContext("2d").drawImage(canvas, 0, 0, w, h);
+  return out.toDataURL("image/jpeg", 0.7);
+}
+
+const isoDate = (d) =>`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 const MONTHS = {
   jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4,
   jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8,
@@ -798,12 +812,12 @@ function extractDate(text) {
     const d = new Date(year, month, day);
     return d.getMonth() === month ? d : null; // rejects e.g. 31 Feb rolling into March
   };
-  let m = t.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s*(\d{4})?\b/);
+  let m = t.match(/\b(\d{1,2})(?:st|nd|rd|th)?[\s.-]+([A-Za-z]{3,9})\.?[\s,.-]*(\d{4})?\b/);
   if (m && MONTHS[m[2].toLowerCase()] !== undefined) {
     const date = build(m[3] ? +m[3] : new Date().getFullYear(), MONTHS[m[2].toLowerCase()], +m[1]);
     if (date) return date;
   }
-  m = t.match(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?\b/);
+  m = t.match(/\b([A-Za-z]{3,9})\.?[\s.-]+(\d{1,2})(?:st|nd|rd|th)?[\s,.-]*(\d{4})?\b/);
   if (m && MONTHS[m[1].toLowerCase()] !== undefined) {
     const date = build(m[3] ? +m[3] : new Date().getFullYear(), MONTHS[m[1].toLowerCase()], +m[2]);
     if (date) return date;
@@ -813,7 +827,7 @@ function extractDate(text) {
     const date = build(+m[1], +m[2] - 1, +m[3]);
     if (date) return date;
   }
-  m = t.match(/\b(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})\b/);
+  m = t.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b/);
   if (m) {
     let year = +m[3];
     if (year < 100) year += year < 50 ? 2000 : 1900;
@@ -825,16 +839,43 @@ function extractDate(text) {
   return null;
 }
 
+// ---------- medical bill classification ----------
+
+const BILL_TYPES = ["doctor", "prescription", "medicine", "other"]; // sub-order for same-day documents
+const BILL_KEYWORDS = {
+  doctor: ["consultation", "consult", "opd", "visit fee", "doctor", "dr.", "physician", "clinic", "checkup", "check-up"],
+  prescription: ["prescription", "rx", "prescribed", "sig:", "dosage", "take as directed", "refill"],
+  medicine: ["pharmacy", "medicine", "medicines", "tablet", "capsule", "syrup", "chemist", "drug store", "mrp", "batch no"],
+};
+
+// Keyword-count classification: whichever category has the most hits wins; no
+// hits at all (or a tie) means "other" - flagged for the user to assign by hand
+// rather than guessed, since a wrong guess here silently misfiles a document.
+function classifyBillType(text) {
+  const t = (text || "").toLowerCase();
+  let best = "other", bestScore = 0;
+  for (const type of ["doctor", "prescription", "medicine"]) {
+    const score = BILL_KEYWORDS[type].reduce((n, kw) => n + (t.includes(kw) ? 1 : 0), 0);
+    if (score > bestScore) { best = type; bestScore = score; }
+  }
+  return best;
+}
+
 // Try the page upright, then rotated, until a date is found - this solves both
-// "what's the date" and "which way is up" in the same OCR pass.
-async function findDateAndRotation(canvas) {
+// "what's the date" and "which way is up" in the same OCR pass. Also returns the
+// OCR text (at whichever rotation won, or upright if none found) so callers that
+// need more than the date - e.g. classifying what kind of document this is - don't
+// have to run OCR a second time.
+async function analyzePage(canvas) {
   const worker = await loadOcrWorker();
+  let firstText = "";
   for (const angle of [0, 90, 180, 270]) {
     const { data } = await worker.recognize(rotateCanvas(canvas, angle));
+    if (angle === 0) firstText = data.text;
     const date = extractDate(data.text);
-    if (date) return { date, rotation: angle };
+    if (date) return { date, rotation: angle, text: data.text };
   }
-  return { date: null, rotation: 0 };
+  return { date: null, rotation: 0, text: firstText };
 }
 
 function reportProgress(message) {
@@ -859,7 +900,7 @@ async function arrangeByDate(fd) {
           reportProgress(`Reading dates… ${doneUnits + 1} so far (${f.name}, page ${i}/${pdfjsDoc.numPages})`);
           const page = await pdfjsDoc.getPage(i);
           const canvas = await renderPage(page, 200 / 72);
-          const { date, rotation } = await findDateAndRotation(canvas);
+          const { date, rotation } = await analyzePage(canvas);
           canvas.width = canvas.height = 0;
           page.cleanup();
           records.push({ kind: "pdfpage", file: f, pageIndex: i - 1, date, rotation, order: doneUnits++ });
@@ -874,7 +915,7 @@ async function arrangeByDate(fd) {
       canvas.width = bitmap.width;
       canvas.height = bitmap.height;
       canvas.getContext("2d").drawImage(bitmap, 0, 0);
-      const { date, rotation } = await findDateAndRotation(canvas);
+      const { date, rotation } = await analyzePage(canvas);
       records.push({ kind: "image", file: f, canvas, date, rotation, order: doneUnits++ });
     }
   }
@@ -903,6 +944,109 @@ async function arrangeByDate(fd) {
   return sendBytes(await save(out), "arranged.pdf");
 }
 
+// ---------- medical bills (analyze, then finalize) ----------
+// Two-step, unlike every other tool: analyzeMedicalBills reports what it found
+// (date, type, thumbnail) per page/image without building anything, so the UI can
+// show a review grid and let the user fix a wrong guess or fill in a flagged
+// "other"/no-date page; finalizeMedicalBills takes the user-approved plan and the
+// same files (resubmitted, not re-uploaded) and builds the actual PDF.
+
+async function analyzeMedicalBills(fd) {
+  const files = fd.getAll("files").filter((f) => f && f.name);
+  if (!files.length) throw new ToolError("Add at least one PDF or image.");
+  for (const f of files) {
+    if (!isPdfLike(f) && !f.type.startsWith("image/")) throw new ToolError(`'${f.name}' isn't a PDF or an image.`);
+  }
+
+  const units = [];
+  let doneUnits = 0;
+  for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+    const f = files[fileIndex];
+    if (isPdfLike(f)) {
+      const pdfjsDoc = await openPdfjs(f, "");
+      try {
+        for (let i = 1; i <= pdfjsDoc.numPages; i++) {
+          reportProgress(`Reading pages… ${doneUnits + 1} so far (${f.name}, page ${i}/${pdfjsDoc.numPages})`);
+          const page = await pdfjsDoc.getPage(i);
+          const canvas = await renderPage(page, 200 / 72);
+          const { date, rotation, text } = await analyzePage(canvas);
+          units.push({
+            fileIndex, pageIndex: i - 1, rotation,
+            date: date ? isoDate(date) : null,
+            type: classifyBillType(text),
+            thumb: canvasThumb(rotateCanvas(canvas, rotation)),
+          });
+          canvas.width = canvas.height = 0;
+          page.cleanup();
+          doneUnits++;
+        }
+      } finally {
+        closePdfjs(pdfjsDoc);
+      }
+    } else {
+      reportProgress(`Reading pages… ${doneUnits + 1} so far (${f.name})`);
+      const bitmap = await createImageBitmap(f, { imageOrientation: "from-image" });
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      const { date, rotation, text } = await analyzePage(canvas);
+      units.push({
+        fileIndex, pageIndex: null, rotation,
+        date: date ? isoDate(date) : null,
+        type: classifyBillType(text),
+        thumb: canvasThumb(rotateCanvas(canvas, rotation)),
+      });
+      doneUnits++;
+    }
+  }
+  return json({ units });
+}
+
+async function finalizeMedicalBills(fd) {
+  const files = fd.getAll("files").filter((f) => f && f.name);
+  if (!files.length) throw new ToolError("Add at least one PDF or image.");
+  let plan;
+  try { plan = JSON.parse(str(fd, "plan", "[]")); } catch (_) { throw new ToolError("Invalid plan."); }
+  if (!Array.isArray(plan) || !plan.length) throw new ToolError("Nothing to arrange.");
+
+  const typeRank = (t) => { const i = BILL_TYPES.indexOf(t); return i === -1 ? BILL_TYPES.length : i; };
+  const ordered = plan
+    .map((p, order) => ({ ...p, order }))
+    .sort((a, b) => {
+      const byDate = (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99");
+      if (byDate) return byDate;
+      const byType = typeRank(a.type) - typeRank(b.type);
+      return byType || a.order - b.order;
+    });
+
+  reportProgress("Putting the pages together…");
+  const out = await PDFDocument.create();
+  const srcDocs = new Map(); // fileIndex -> loaded pdf-lib document (reused across its pages)
+  for (const item of ordered) {
+    const f = files[item.fileIndex];
+    if (!f) throw new ToolError("The files don't match the plan. Please analyze again.");
+    const rotation = ((parseInt(item.rotation, 10) || 0) % 360 + 360) % 360;
+    if (item.pageIndex === null || item.pageIndex === undefined) {
+      const bitmap = await createImageBitmap(f, { imageOrientation: "from-image" });
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      const img = await out.embedPng(await canvasBytes(rotateCanvas(canvas, rotation), "image/png"));
+      const w = (img.width * 72) / 100, h = (img.height * 72) / 100;
+      out.addPage([w, h]).drawImage(img, { x: 0, y: 0, width: w, height: h });
+    } else {
+      let src = srcDocs.get(item.fileIndex);
+      if (!src) { src = await loadPdf(f, ""); srcDocs.set(item.fileIndex, src); }
+      const [page] = await out.copyPages(src, [item.pageIndex]);
+      out.addPage(page);
+      if (rotation) page.setRotation(degrees((pageRotation(page) + rotation) % 360));
+    }
+  }
+  return sendBytes(await save(out), "medical-records.pdf");
+}
+
 // ---------- router ----------
 
 const ROUTES = {
@@ -924,6 +1068,8 @@ const ROUTES = {
   "/api/crop": crop,
   "/api/metadata": metadata,
   "/api/arrange-by-date": arrangeByDate,
+  "/api/analyze-medical-bills": analyzeMedicalBills,
+  "/api/finalize-medical-bills": finalizeMedicalBills,
 };
 
 export async function handle(url, fd) {

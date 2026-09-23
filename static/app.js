@@ -25,6 +25,7 @@ const ICONS = {
   metadata: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/>',
   unlock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
   "arrange-by-date": '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  "medical-bills": '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h1"/>',
   protect: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   // interface controls
   arrowUp: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
@@ -155,6 +156,28 @@ const TOOLS = [
     guard: () => (!LOCAL ? "This tool reads the date on each page by running OCR on your device, so it only works in the desktop app." : null),
     desc: "Drop in PDFs and photos with a date on each page, and get one PDF with everything in date order, upright.",
     endpoint: "/api/arrange-by-date", accept: "application/pdf,image/*", multiple: true, button: "Arrange by date",
+  },
+  {
+    id: "medical-bills", category: "organize", title: "Arrange medical bills", isNew: true,
+    guard: () => (!LOCAL ? "This tool reads each page with OCR on your device, so it only works in the desktop app." : null),
+    desc: "Sort doctor bills, prescriptions and medicine bills into one PDF: by date, then doctor bill, prescription, medicine bill.",
+    endpoint: "/api/finalize-medical-bills", accept: "application/pdf,image/*", multiple: true, wide: true, button: "Build PDF",
+    options: () => `
+      <div class="picker-bar">
+        <span class="hint grow" id="medCount"></span>
+      </div>
+      <p class="hint">Check the date and document type pdforge found for each page, and fix anything flagged for review.</p>
+      <input type="hidden" name="plan" id="planField">
+      <div class="pages med-grid" id="pageGrid"></div>`,
+    afterRender: () => initMedicalReview(),
+    validate: (fd) => {
+      let plan;
+      try { plan = JSON.parse(fd.get("plan") || "[]"); } catch (_) { return "Something went wrong reading the pages."; }
+      if (!plan.length) return "No pages to arrange.";
+      if (plan.some((p) => !p.date)) return "Set the date for every page flagged for review.";
+      if (plan.some((p) => p.type === "other")) return "Set the document type for every page flagged for review.";
+      return null;
+    },
   },
 
   // Optimize
@@ -385,6 +408,8 @@ let engine = null;
 // Slow tools (e.g. OCR) report progress this way; postForm() otherwise awaits in one shot.
 window.addEventListener("pdforge:progress", (e) => {
   if (!$("stepWorking").hidden) $("workingMsg").textContent = e.detail.message;
+  const inline = document.getElementById("progressMsg"); // in-grid loading spinners (e.g. medical bill review)
+  if (inline) inline.textContent = e.detail.message;
 });
 async function postForm(url, fd) {
   if (LOCAL) engine ||= await import("./engine/engine.mjs");
@@ -999,6 +1024,57 @@ function renderOrganizer() {
     it.blank ? { blank: true, rotate: it.rotate } : { page: it.page, rotate: it.rotate }));
   const blanks = org.items.filter((it) => it.blank).length;
   $("orgCount").textContent = `${org.items.length} page${org.items.length === 1 ? "" : "s"}${blanks ? `, including ${blanks} blank` : ""}`;
+}
+
+// ---------- medical bill review (Arrange medical bills) ----------
+const BILL_TYPE_LABELS = { doctor: "Doctor bill", prescription: "Prescription", medicine: "Medicine bill", other: "Other" };
+let medUnits = [];
+
+function initMedicalReview() {
+  const grid = $("pageGrid");
+  grid.innerHTML = `<div class="pages-msg"><div class="spinner"></div><span id="progressMsg">Reading pages…</span></div>`;
+  (async () => {
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append("files", f));
+      const data = await (await postForm("/api/analyze-medical-bills", fd)).json();
+      medUnits = data.units;
+      renderMedicalReview();
+    } catch (e) {
+      grid.innerHTML = `<div class="pages-msg">${esc(e.message)}</div>`;
+    }
+  })();
+}
+
+function renderMedicalReview() {
+  const grid = $("pageGrid");
+  grid.innerHTML = medUnits.map((u, i) => {
+    const flagged = !u.date || u.type === "other";
+    return `
+    <div class="page med-page${flagged ? " needs-review" : ""}" data-i="${i}">
+      <img src="${u.thumb}" alt="Page ${i + 1}">
+      ${flagged ? `<span class="badge med-flag">${icon("eye", "badge-icon")} Needs review</span>` : ""}
+      <div class="med-fields">
+        <select data-field="type" aria-label="Document type">
+          ${Object.entries(BILL_TYPE_LABELS).map(([v, label]) => `<option value="${v}" ${u.type === v ? "selected" : ""}>${esc(label)}</option>`).join("")}
+        </select>
+        <input type="date" data-field="date" value="${u.date || ""}" aria-label="Document date">
+      </div>
+    </div>`;
+  }).join("") || `<div class="pages-msg">No pages found.</div>`;
+
+  grid.querySelectorAll(".med-page").forEach((card) => {
+    const i = +card.dataset.i;
+    card.querySelectorAll("[data-field]").forEach((el) => el.addEventListener("change", () => {
+      medUnits[i][el.dataset.field] = el.value || null;
+      renderMedicalReview();
+    }));
+  });
+
+  $("planField").value = JSON.stringify(medUnits.map((u) => (
+    { fileIndex: u.fileIndex, pageIndex: u.pageIndex, date: u.date, type: u.type, rotation: u.rotation })));
+  const flaggedCount = medUnits.filter((u) => !u.date || u.type === "other").length;
+  $("medCount").textContent = `${medUnits.length} page${medUnits.length === 1 ? "" : "s"}${flaggedCount ? `, ${flaggedCount} need${flaggedCount === 1 ? "s" : ""} review` : ""}`;
 }
 
 // ---------- expanded preview ----------

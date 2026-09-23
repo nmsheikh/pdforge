@@ -452,6 +452,16 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .org-tools button:disabled { opacity: .3; cursor: default; background: rgba(28, 26, 23, .78); }
 @media (hover: none) { .org-tools { opacity: 1; } }
 
+.med-page { cursor: default; padding-bottom: 9px; }
+.med-page img { aspect-ratio: 1 / 1.3; object-fit: cover; }
+.med-page.needs-review { border-color: var(--accent); }
+.med-flag { position: absolute; top: 12px; left: 12px; }
+.med-fields { display: grid; gap: 6px; margin-top: 9px; }
+.med-fields select, .med-fields input[type="date"] {
+  width: 100%; padding: 7px 9px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 7px;
+}
+
 /* ---------- Result ---------- */
 .saved-note { margin: 0 0 6px; font-size: 14px; color: var(--ok); font-weight: 600; word-break: break-all; }
 

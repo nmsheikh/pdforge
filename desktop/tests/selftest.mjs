@@ -36,7 +36,7 @@ async function makePdf(pages = 10, { rotateSecond = false, withPhoto = false } =
 const asFile = (bytes, name, type = "application/pdf") => new File([bytes], name, { type });
 
 // A photo/scan with a printed date, optionally sideways - for the arrange-by-date OCR test.
-async function makeDatedImage(dateText, rotateDeg = 0) {
+async function makeDatedImage(dateText, rotateDeg = 0, bodyText = "") {
   const w = 400, h = 300;
   const c = document.createElement("canvas");
   c.width = rotateDeg % 180 ? h : w;
@@ -50,6 +50,10 @@ async function makeDatedImage(dateText, rotateDeg = 0) {
   ctx.fillStyle = "#000";
   ctx.font = "bold 32px sans-serif";
   ctx.fillText(dateText, -w / 2 + 20, -h / 2 + 60);
+  if (bodyText) {
+    ctx.font = "20px sans-serif";
+    ctx.fillText(bodyText, -w / 2 + 20, -h / 2 + 110);
+  }
   ctx.restore();
   return new Uint8Array(await (await new Promise((r) => c.toBlob(r, "image/png"))).arrayBuffer());
 }
@@ -189,6 +193,62 @@ async function runEngine() {
     await worker.terminate();
     check("arrange by date: chronological order", /1 January/.test(read[0]) && /2 January/.test(read[1]) && /3 January/.test(read[2]), read.join(" | "));
   }
+
+  // Medical bills: classification (keyword matching), flagging of the unrecognizable
+  // page, and date-then-visit-order sorting once the user fills in the flagged one.
+  r = await call("/api/analyze-medical-bills", {}, [
+    asFile(await makeDatedImage("12-01-2026", 0, "Dr. Smith Clinic - Consultation fee"), "doctor.png", "image/png"),
+    asFile(await makeDatedImage("12-01-2026", 0, "Prescription - Rx - take as directed"), "rx.png", "image/png"),
+    asFile(await makeDatedImage("12-01-2026", 0, "City Pharmacy - Tablet Capsule MRP"), "meds.png", "image/png"),
+    asFile(await makeDatedImage("10-01-2026", 0, "Dr. Jones Clinic - Consultation fee"), "earlier-doctor.png", "image/png"),
+    asFile(await makeDatedImage("", 0, "random unrelated receipt text"), "unknown.png", "image/png"), // no date, no keywords
+  ]);
+  const analysis = r.status === 200 ? r.body : null;
+  check("medical bills: analyze runs", r.status === 200 && analysis?.units?.length === 5, `${r.ms}ms ${r.body?.error || ""}`);
+  if (analysis) {
+    const [doctor, rx, meds, earlierDoctor, unknown] = analysis.units;
+    check("medical bills: classifies doctor bill", doctor.type === "doctor", doctor.type);
+    check("medical bills: classifies prescription", rx.type === "prescription", rx.type);
+    check("medical bills: classifies medicine bill", meds.type === "medicine", meds.type);
+    check("medical bills: unrecognizable page flagged, not guessed", unknown.type === "other" && !unknown.date,
+      `type=${unknown.type} date=${unknown.date}`);
+
+    // Simulate the user filling in the flagged page during review, then finalize.
+    const plan = analysis.units.map((u, i) => (i === 4 ? { ...u, date: "2026-01-11", type: "medicine" } : u));
+    r = await call("/api/finalize-medical-bills", { plan: JSON.stringify(plan) }, [
+      asFile(await makeDatedImage("12-01-2026", 0, "Dr. Smith Clinic - Consultation fee"), "doctor.png", "image/png"),
+      asFile(await makeDatedImage("12-01-2026", 0, "Prescription - Rx - take as directed"), "rx.png", "image/png"),
+      asFile(await makeDatedImage("12-01-2026", 0, "City Pharmacy - Tablet Capsule MRP"), "meds.png", "image/png"),
+      asFile(await makeDatedImage("10-01-2026", 0, "Dr. Jones Clinic - Consultation fee"), "earlier-doctor.png", "image/png"),
+      asFile(await makeDatedImage("", 0, "random unrelated receipt text"), "unknown.png", "image/png"),
+    ]);
+    const finalized = r.status === 200 ? r.body : null;
+    check("medical bills: finalize runs", finalized && (await pagesOf(finalized)) === 5, `${r.ms}ms ${r.body?.error || ""}`);
+    if (finalized) {
+      // Expected order: 10 Jan (doctor), 11 Jan (the filled-in medicine page), then
+      // 12 Jan doctor -> prescription -> medicine.
+      const raster = await pdfjs.getDocument({ data: finalized }).promise;
+      const worker = await (await import("./vendor/tesseract.esm.min.js")).default.createWorker("eng", 1, {
+        workerPath: new URL("./vendor/tesseract-worker.min.js", import.meta.url).href,
+        corePath: new URL("./vendor/tesseract-core-simd-lstm.js", import.meta.url).href,
+        langPath: new URL("./vendor/", import.meta.url).href,
+        cacheMethod: "none", gzip: true, workerBlobURL: false, logger: () => {},
+      });
+      const read = [];
+      for (let i = 1; i <= 5; i++) {
+        const page = await raster.getPage(i);
+        const viewport = page.getViewport({ scale: 2 });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        await page.render({ canvas, canvasContext: canvas.getContext("2d"), viewport }).promise;
+        read.push((await worker.recognize(canvas)).data.text);
+      }
+      await worker.terminate();
+      check("medical bills: date, then doctor -> prescription -> medicine order",
+        /Jones/.test(read[0]) && /unrelated/.test(read[1]) && /Smith/.test(read[2]) && /Rx/.test(read[3]) && /Pharmacy/.test(read[4]),
+        read.map((t) => t.replace(/\s+/g, " ").trim()).join(" || "));
+    }
+  }
 }
 
 const errors = [];
@@ -199,7 +259,7 @@ const until = async (fn, ms = 10000) => { for (let t = 0; t < ms; t += 100) { if
 
 // Drive the real interface (app.js globals) the way a user would.
 async function runUi() {
-  check("UI: home shows 16 tools", document.querySelectorAll("#toolGrid .tool").length === 16);
+  check("UI: home shows 17 tools", document.querySelectorAll("#toolGrid .tool").length === 17);
   check("UI: web-only Download button hidden in app", getComputedStyle(document.getElementById("getAppBtn")).display === "none");
   document.getElementById("menuBtn").click();
   check("UI: All tools menu opens", !document.getElementById("megaMenu").hidden);
