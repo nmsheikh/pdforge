@@ -40,6 +40,7 @@ const ICONS = {
   expand: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   rotateCcw: '<path d="M3 12a9 9 0 1 0 9-9c-2.52 0-4.93 1-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
   listView: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
@@ -1283,6 +1284,12 @@ async function openDownload(reason = "") {
   $("dlMain").hidden = !key;
   $("dlButtons").hidden = !!key;
   $("dlOtherBtn").setAttribute("aria-expanded", "false");
+  // First-launch steps follow the same detected system - no separate toggle to operate.
+  const isMac = key.startsWith("mac");
+  const isWindows = key === "windows";
+  $("dlHelp").hidden = !(isMac || isWindows);
+  $("dlStepsMac").hidden = !isMac;
+  $("dlStepsWin").hidden = !isWindows;
   if (!key) return;
   const [name, detail] = DOWNLOADS[key];
   $("dlMainBtn").href = `/download/${key}`;
@@ -1335,6 +1342,19 @@ $("dlOtherBtn").addEventListener("click", () => {
   $("dlButtons").hidden = !show;
   $("dlOtherBtn").setAttribute("aria-expanded", String(show));
   $("dlOtherBtn").textContent = show ? "Hide other systems" : "Not your system?";
+});
+let copyTimer;
+$("dlCopyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("dlCode").textContent);
+  } catch (_) {
+    return;
+  }
+  // Swap the icon markup rather than toggling .hidden on it: some engines don't
+  // reflect the `hidden` IDL property to the attribute for <svg> elements.
+  $("dlCopyBtn").innerHTML = icon("check", "ui");
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => { $("dlCopyBtn").innerHTML = icon("copy", "ui"); }, 1500);
 });
 $("downloadModal").addEventListener("click", (e) => { if (e.target === $("downloadModal")) closeDownload(); });
 $("fileInput").addEventListener("change", (e) => addFiles(e.target.files));

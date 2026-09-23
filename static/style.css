@@ -483,11 +483,9 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .modal-close { display: grid; place-items: center; }
 .modal-close:hover { color: var(--text); }
 .dl-reason { margin: 0 0 14px; padding: 12px 15px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: 14.5px; }
-.dl-perks { margin: 0 0 20px; padding-left: 20px; color: var(--muted); font-size: 14.5px; }
-.dl-perks strong { color: var(--text); }
 .dl-main { text-align: center; }
-.dl-main .primary { width: 100%; margin: 4px 0 0; }
-.dl-main .hint { margin-top: 8px; }
+.dl-main .hint { margin: 0 0 10px; }
+.dl-main .primary { width: 100%; margin: 0; }
 .dl-main .link { margin-top: 12px; font-size: 13.5px; }
 .dl-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .dl-main:not([hidden]) + .dl-buttons { margin-top: 14px; }
@@ -500,15 +498,21 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .dl-btn:hover { border-color: var(--accent); }
 .dl-btn.suggested { background: var(--accent-soft); }
 .dl-btn.suggested strong::after { content: " · Recommended"; font-weight: 600; font-size: 11.5px; color: var(--accent); }
-.dl-help { margin: 18px 0 8px; font-size: 14px; }
-.dl-help summary { cursor: pointer; font-weight: 600; }
-.dl-help p { margin: 8px 0 0; color: var(--muted); }
+.dl-help { margin: 18px 0 8px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; }
+.dl-help p { margin: 0; color: var(--muted); line-height: 1.5; }
 .dl-help strong { color: var(--text); }
-.dl-code { margin: 8px 0 0; }
+.dl-steps p + p { margin-top: 10px; }
+.dl-code { margin: 10px 0 0; position: relative; }
 .dl-code code {
-  display: block; padding: 9px 12px; font-family: ui-monospace, monospace; font-size: 12.5px;
+  display: block; padding: 9px 42px 9px 12px; font-family: ui-monospace, monospace; font-size: 12.5px;
   color: var(--text); background: var(--surface-2); border-radius: 7px; overflow-x: auto; white-space: pre;
 }
+.dl-copy {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border: none; border-radius: 6px;
+  background: var(--border); color: var(--muted); display: grid; place-items: center; cursor: pointer;
+}
+.dl-copy:hover { color: var(--text); }
+.dl-copy .ui { width: 14px; height: 14px; }
 .dl-phone p { margin: 0 0 12px; color: var(--muted); }
 .dl-phone strong { color: var(--text); }
 .dl-phone .primary { width: 100%; }

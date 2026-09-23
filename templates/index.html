@@ -129,14 +129,9 @@
       <p class="hint" id="shareNote" hidden></p>
     </div>
     <div id="dlDesktop">
-    <ul class="dl-perks">
-      <li><strong>No file size limit</strong>: work with PDFs of any size</li>
-      <li><strong>Private</strong>: your files never leave your computer</li>
-      <li><strong>Works offline</strong>, free, and only a few MB</li>
-    </ul>
     <div class="dl-main" id="dlMain" hidden>
-      <a class="primary big" id="dlMainBtn" href="/download/mac-arm">Download</a>
       <p class="hint center" id="dlMainNote"></p>
+      <a class="primary big" id="dlMainBtn" href="/download/mac-arm">Download</a>
       <button class="link" id="dlOtherBtn" aria-expanded="false">Not your system?</button>
     </div>
     <div class="dl-buttons" id="dlButtons">
@@ -145,13 +140,20 @@
       <a class="dl-btn" data-key="windows" href="/download/windows"><strong>Windows</strong><span>10 and 11 (64-bit)</span></a>
       <a class="dl-btn" data-key="linux" href="/download/linux"><strong>Linux</strong><span>Ubuntu / Debian (.deb)</span></a>
     </div>
-    <details class="dl-help">
-      <summary>First time opening it?</summary>
+    <div class="dl-help" id="dlHelp" hidden>
       <p>The app isn't signed with a paid Apple or Microsoft certificate yet, so your computer asks once:</p>
-      <p><strong>macOS:</strong> drag pdforge to Applications. If it says the app "is damaged", don't delete it &mdash; open <strong>Terminal</strong> (Spotlight &rarr; type "Terminal"), paste this, press Return, then open pdforge again:</p>
-      <p class="dl-code"><code>xattr -cr /Applications/pdforge.app</code></p>
-      <p><strong>Windows:</strong> if you see "Windows protected your PC", click <em>More info</em>, then <em>Run anyway</em>.</p>
-    </details>
+      <div class="dl-steps" id="dlStepsMac" hidden>
+        <p><strong>Steps to run:</strong><br>1. Drag pdforge to Applications.<br>2. Open <strong>Terminal</strong>.</p>
+        <div class="dl-code">
+          <code id="dlCode">xattr -cr /Applications/pdforge.app</code>
+          <button type="button" class="dl-copy" id="dlCopyBtn" aria-label="Copy command" title="Copy"><svg class="ui" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        </div>
+        <p>3. Paste that in and press Return.<br>4. Open pdforge again.</p>
+      </div>
+      <div class="dl-steps" id="dlStepsWin" hidden>
+        <p>If you see "Windows protected your PC", click <em>More info</em>, then <em>Run anyway</em>.</p>
+      </div>
+    </div>
     <p class="hint center"><a href="https://github.com/nmsheikh/pdforge/releases/latest" target="_blank" rel="noopener">All versions and release notes</a></p>
     </div>
   </div>
