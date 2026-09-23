@@ -209,7 +209,11 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
   background: var(--accent); color: #fff; font-weight: 600; font-size: 19px;
   padding: 16px 40px; border-radius: var(--pill);
 }
-.dz-sub { margin-top: 14px; color: var(--muted); font-size: 14.5px; }
+.dz-sub { margin-top: 14px; color: var(--muted); font-size: 14.5px; text-align: center; }
+.dz-warn {
+  margin: 14px 0 0; max-width: 420px; text-align: center; font-size: 14px; font-weight: 600;
+  color: var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: var(--radius-sm);
+}
 
 /* ---------- Files: list and grid views ---------- */
 .files-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }

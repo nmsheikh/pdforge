@@ -446,7 +446,10 @@ function route() {
   $("fileInput").accept = t.accept || "application/pdf,.pdf";
   $("fileInput").multiple = !!t.multiple;
   $("dzMain").textContent = t.accept ? "Select images" : t.multiple ? "Select PDF files" : "Select PDF file";
-  $("dzSub").textContent = t.multiple ? "or drop them here. You can add several at once." : "or drop it here";
+  $("dzSub").textContent = t.multiple
+    ? `or drop them here. You can add several at once.`
+    : `or drop it here. ${t.title} works on one ${t.accept ? "image" : "PDF"} at a time.`;
+  $("dzWarn").hidden = true;
   window.scrollTo(0, 0);
   reset();
   if (pendingFiles) {
@@ -478,8 +481,13 @@ async function addFiles(list) {
   const wantPdf = !tool.accept;
   const rejected = incoming.filter((f) => (wantPdf ? !isPdf(f) : !f.type.startsWith("image/")));
   incoming = incoming.filter((f) => !rejected.includes(f));
-  if (rejected.length) alert(`Skipped ${rejected.map((f) => f.name).join(", ")}: not ${wantPdf ? "a PDF" : "an image"}.`);
+  if (rejected.length) warnOnDropzone(`Skipped ${rejected.map((f) => f.name).join(", ")}: not ${wantPdf ? "a PDF" : "an image"}.`);
   if (!incoming.length) return;
+
+  if (!tool.multiple && incoming.length > 1) {
+    warnOnDropzone(`${tool.title} works on one ${wantPdf ? "PDF" : "image"} at a time. Drop a single file, or use a tool that takes several.`);
+    return;
+  }
 
   const next = tool.multiple ? files.concat(incoming) : [incoming[0]];
   const total = next.reduce((s, f) => s + f.size, 0);
@@ -511,6 +519,17 @@ async function addFiles(list) {
   // Re-render the options when the file set changes in a way the options depend on.
   if (firstRender || wasEncrypted !== !!info.encrypted || guardMessage() || $("runBtn").hidden) renderOptions();
   show("stepOptions");
+}
+
+let warnTimer;
+function warnOnDropzone(message) {
+  const el = $("dzWarn");
+  el.textContent = message;
+  el.hidden = false;
+  clearTimeout(warnTimer);
+  warnTimer = setTimeout(() => { el.hidden = true; }, 8000);
+  if (!$("stepUpload").hidden) return;
+  showError(message); // already past the upload screen
 }
 
 function summarize() {

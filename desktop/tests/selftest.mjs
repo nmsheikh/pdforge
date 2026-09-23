@@ -199,6 +199,16 @@ async function runUi() {
   check("UI: result protected with the password asked up front", ready && !opensWithoutPw, document.getElementById("doneMeta").textContent);
   check("UI: no password box on the result screen", !document.getElementById("protectBox"));
 
+  // Single-file tools refuse a multi-file drop instead of quietly using the first.
+  location.hash = "split";
+  await wait(250);
+  await addFiles([asFile(await makePdf(4), "a.pdf"), asFile(await makePdf(4), "b.pdf")]);
+  await wait(400);
+  check("UI: single-file tool refuses two files", files.length === 0 && !document.getElementById("dzWarn").hidden,
+    document.getElementById("dzWarn").textContent);
+  await addFiles([asFile(await makePdf(4), "a.pdf")]);
+  check("UI: single-file tool accepts one file", await until(() => files.length === 1 && !document.getElementById("stepOptions").hidden));
+
   check("UI: no JavaScript errors", errors.length === 0, errors.join(" | "));
 }
 
