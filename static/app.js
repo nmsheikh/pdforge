@@ -152,13 +152,13 @@ const TOOLS = [
     validate: (fd) => (JSON.parse(fd.get("plan") || "[]").length ? null : "The document needs at least one page."),
   },
   {
-    id: "arrange-by-date", category: "organize", title: "Arrange by date", isNew: true,
+    id: "arrange-by-date", category: "organize", title: "Arrange by date", isNew: true, localOnly: true,
     guard: () => (!LOCAL ? "This tool reads the date on each page by running OCR on your device, so it only works in the desktop app." : null),
     desc: "Drop in PDFs and photos with a date on each page, and get one PDF with everything in date order, upright.",
     endpoint: "/api/arrange-by-date", accept: "application/pdf,image/*", multiple: true, button: "Arrange by date",
   },
   {
-    id: "medical-bills", category: "organize", title: "Arrange medical bills", isNew: true,
+    id: "medical-bills", category: "organize", title: "Arrange medical bills", isNew: true, localOnly: true,
     guard: () => (!LOCAL ? "This tool reads each page with OCR on your device, so it only works in the desktop app." : null),
     desc: "Sort doctor bills, prescriptions and medicine bills into one PDF: by date, then doctor bill, prescription, medicine bill.",
     endpoint: "/api/finalize-medical-bills", accept: "application/pdf,image/*", multiple: true, wide: true, button: "Build PDF",
@@ -470,6 +470,13 @@ function route() {
     $("home").hidden = false;
     $("workspace").hidden = true;
     document.title = "pdforge";
+    return;
+  }
+  // Desktop-only tools (OCR) can't do anything on the hosted site - nudge toward the
+  // app right away instead of opening a tool screen where every upload dead-ends.
+  if (t.localOnly && !LOCAL) {
+    location.hash = "";
+    openDownload(t.guard());
     return;
   }
   tool = t;
