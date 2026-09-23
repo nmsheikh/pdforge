@@ -75,9 +75,9 @@ jobs:
             - Ubuntu/Debian: `pdforge_*_amd64.deb` (other Linux: `.AppImage`)
 
             **First launch:** the app isn't signed with a paid certificate yet.
-            On macOS, if it says the app "is damaged", open System Settings -> Privacy & Security,
-            scroll to the message about pdforge, and click Open Anyway (twice: once there, once when
-            you reopen the app). On Windows, click More info, then Run anyway.
+            On macOS, if it says the app "is damaged", open Terminal and run:
+            `xattr -cr /Applications/pdforge.app`, then open pdforge again.
+            On Windows, click More info, then Run anyway.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
