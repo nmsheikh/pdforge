@@ -1126,9 +1126,43 @@ function filenameFrom(res) {
 }
 
 // ---------- desktop app: download panel (website) and saving files (app) ----------
+const DOWNLOADS = {
+  "mac-arm": ["macOS", "Apple Silicon (M1 and newer)"],
+  "mac-intel": ["macOS", "Intel processor"],
+  windows: ["Windows", "Windows 10 and 11, 64-bit"],
+  linux: ["Linux", "Ubuntu / Debian (.deb)"],
+};
+
 function detectOs() {
   const p = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent).toLowerCase();
-  return p.includes("mac") ? "mac" : p.includes("win") ? "windows" : p.includes("linux") ? "linux" : "";
+  if (p.includes("mac")) return "mac";
+  if (p.includes("win")) return "windows";
+  return p.includes("linux") && !p.includes("android") ? "linux" : "";
+}
+
+// Apple Silicon or Intel? Chromium answers directly; otherwise the GPU name tells us.
+function macChipFromGpu() {
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    const info = gl && gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "");
+    if (/apple\s*(m\d|gpu)/i.test(renderer)) return "arm";
+    if (/intel|radeon|nvidia|geforce/i.test(renderer)) return "x86";
+  } catch (_) {}
+  return "";
+}
+
+async function detectDownload() {
+  const os = detectOs();
+  if (os === "windows" || os === "linux") return os;
+  if (os !== "mac") return "";
+  let arch = "";
+  try {
+    const hints = await navigator.userAgentData?.getHighEntropyValues?.(["architecture"]);
+    if (hints?.architecture) arch = hints.architecture.includes("arm") ? "arm" : "x86";
+  } catch (_) {}
+  // Unknown Mac: Apple Silicon is the safe default, and the other build is one click away.
+  return (arch || macChipFromGpu()) === "x86" ? "mac-intel" : "mac-arm";
 }
 
 // Phones and tablets can't run the desktop app.
@@ -1136,21 +1170,28 @@ const IS_PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
   || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform)); // iPadOS reports "Mac"
 document.body.classList.toggle("phone", IS_PHONE);
 
-function openDownload(reason = "") {
+async function openDownload(reason = "") {
   $("dlTitle").textContent = IS_PHONE ? "Use pdforge on a computer" : "Get pdforge for your computer";
   $("dlPhone").hidden = !IS_PHONE;
   $("dlDesktop").hidden = IS_PHONE;
   $("shareNote").hidden = true;
   $("dlReason").textContent = reason;
   $("dlReason").hidden = !reason;
-  const os = detectOs();
-  document.querySelectorAll(".dl-btn").forEach((a, i, all) => {
-    // Can't tell Apple Silicon from Intel in the browser; suggest Apple Silicon (most current Macs).
-    const first = [...all].find((b) => b.dataset.os === os);
-    a.classList.toggle("suggested", a === first);
-  });
   $("downloadModal").hidden = false;
   $("dlClose").focus();
+  if (IS_PHONE) return;
+
+  // One button for the system we detect; the rest stay a click away.
+  const key = await detectDownload();
+  $("dlMain").hidden = !key;
+  $("dlButtons").hidden = !!key;
+  $("dlOtherBtn").setAttribute("aria-expanded", "false");
+  if (!key) return;
+  const [name, detail] = DOWNLOADS[key];
+  $("dlMainBtn").href = `/download/${key}`;
+  $("dlMainBtn").textContent = `Download for ${name}`;
+  $("dlMainNote").textContent = detail;
+  document.querySelectorAll(".dl-btn").forEach((a) => a.classList.toggle("suggested", a.dataset.key === key));
 }
 const closeDownload = () => { $("downloadModal").hidden = true; };
 
@@ -1192,6 +1233,12 @@ $("shareLink").addEventListener("click", async () => {
 });
 document.querySelectorAll("[data-open-download]").forEach((b) => b.addEventListener("click", () => openDownload()));
 $("dlClose").addEventListener("click", closeDownload);
+$("dlOtherBtn").addEventListener("click", () => {
+  const show = $("dlButtons").hidden;
+  $("dlButtons").hidden = !show;
+  $("dlOtherBtn").setAttribute("aria-expanded", String(show));
+  $("dlOtherBtn").textContent = show ? "Hide other systems" : "Not your system?";
+});
 $("downloadModal").addEventListener("click", (e) => { if (e.target === $("downloadModal")) closeDownload(); });
 $("fileInput").addEventListener("change", (e) => addFiles(e.target.files));
 const dz = $("dropzone");

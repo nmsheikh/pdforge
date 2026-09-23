@@ -465,7 +465,7 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
   background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow-lg);
 }
 .modal h2 { margin: 0 0 14px; }
-.modal a:not(.dl-btn) { color: var(--accent); }
+.modal a:not(.dl-btn):not(.primary) { color: var(--accent); }
 .modal-close {
   position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border: none; border-radius: var(--pill);
   background: var(--surface-2); color: var(--muted); cursor: pointer; font-size: 14px;
@@ -475,7 +475,12 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .dl-reason { margin: 0 0 14px; padding: 12px 15px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: 14.5px; }
 .dl-perks { margin: 0 0 20px; padding-left: 20px; color: var(--muted); font-size: 14.5px; }
 .dl-perks strong { color: var(--text); }
+.dl-main { text-align: center; }
+.dl-main .primary { width: 100%; margin: 4px 0 0; }
+.dl-main .hint { margin-top: 8px; }
+.dl-main .link { margin-top: 12px; font-size: 13.5px; }
 .dl-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dl-main:not([hidden]) + .dl-buttons { margin-top: 14px; }
 @media (max-width: 480px) { .dl-buttons { grid-template-columns: 1fr; } }
 .dl-btn {
   display: flex; flex-direction: column; gap: 2px; padding: 13px 16px; border-radius: var(--radius-sm); text-decoration: none;

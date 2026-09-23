@@ -132,13 +132,18 @@
     <ul class="dl-perks">
       <li><strong>No file size limit</strong>: work with PDFs of any size</li>
       <li><strong>Private</strong>: your files never leave your computer</li>
-      <li><strong>Works offline</strong>, free, and only about 10 MB</li>
+      <li><strong>Works offline</strong>, free, and only a few MB</li>
     </ul>
-    <div class="dl-buttons">
-      <a class="dl-btn" data-os="mac" href="/download/mac-arm"><strong>macOS</strong><span>Apple Silicon (M1 and newer)</span></a>
-      <a class="dl-btn" data-os="mac" href="/download/mac-intel"><strong>macOS</strong><span>Intel</span></a>
-      <a class="dl-btn" data-os="windows" href="/download/windows"><strong>Windows</strong><span>10 and 11 (64-bit)</span></a>
-      <a class="dl-btn" data-os="linux" href="/download/linux"><strong>Linux</strong><span>Ubuntu / Debian (.deb)</span></a>
+    <div class="dl-main" id="dlMain" hidden>
+      <a class="primary big" id="dlMainBtn" href="/download/mac-arm">Download</a>
+      <p class="hint center" id="dlMainNote"></p>
+      <button class="link" id="dlOtherBtn" aria-expanded="false">Not your system?</button>
+    </div>
+    <div class="dl-buttons" id="dlButtons">
+      <a class="dl-btn" data-key="mac-arm" href="/download/mac-arm"><strong>macOS</strong><span>Apple Silicon (M1 and newer)</span></a>
+      <a class="dl-btn" data-key="mac-intel" href="/download/mac-intel"><strong>macOS</strong><span>Intel</span></a>
+      <a class="dl-btn" data-key="windows" href="/download/windows"><strong>Windows</strong><span>10 and 11 (64-bit)</span></a>
+      <a class="dl-btn" data-key="linux" href="/download/linux"><strong>Linux</strong><span>Ubuntu / Debian (.deb)</span></a>
     </div>
     <details class="dl-help">
       <summary>First time opening it?</summary>
