@@ -482,6 +482,7 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 }
 .modal-close { display: grid; place-items: center; }
 .modal-close:hover { color: var(--text); }
+.modal-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dl-reason { margin: 0 0 14px; padding: 12px 15px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: 14.5px; }
 .dl-main { text-align: center; }
 .dl-main .hint { margin: 0 0 10px; }
