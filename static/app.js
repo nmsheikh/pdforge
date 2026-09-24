@@ -26,6 +26,8 @@ const ICONS = {
   unlock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
   "arrange-by-date": '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
   "medical-bills": '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h1"/>',
+  claude: '<path d="M12 2v20"/><path d="M4.5 6.5l15 11"/><path d="M19.5 6.5l-15 11"/>',
+  openai: '<circle cx="12" cy="6.5" r="2.5"/><circle cx="6.5" cy="16" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/><path d="M12 9v3.5M6.5 13.5 12 12.5M17.5 13.5 12 12.5"/>',
   protect: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   // interface controls
   arrowUp: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
@@ -168,11 +170,16 @@ const TOOLS = [
         <summary>Use AI for better extraction (optional)</summary>
         <p class="hint">Off by default. When set, each document's <em>text</em> (not the image) is sent to the provider below using your own key, to fill in the claim details more accurately than pattern-matching alone can. Everything else in pdforge stays on your device.</p>
         <div class="ai-settings-row">
-          <select id="aiProvider" data-ui="1" aria-label="AI provider">
-            <option value="">Off</option>
-            <option value="claude">Claude</option>
-            <option value="openai">OpenAI</option>
-          </select>
+          <div class="ai-provider" id="aiProviderWrap">
+            <button type="button" class="ai-provider-btn" id="aiProviderBtn" aria-haspopup="listbox" aria-expanded="false">
+              <span id="aiProviderBtnIcon"></span><span id="aiProviderBtnLabel">Off</span>${icon("chevronRight", "ui ai-provider-caret")}
+            </button>
+            <div class="ai-provider-menu" id="aiProviderMenu" role="listbox" hidden>
+              <button type="button" class="ai-provider-opt" data-value="" role="option">Off</button>
+              <button type="button" class="ai-provider-opt" data-value="claude" role="option">${icon("claude", "ui")} Claude</button>
+              <button type="button" class="ai-provider-opt" data-value="openai" role="option">${icon("openai", "ui")} OpenAI</button>
+            </div>
+          </div>
           ${passwordInput("aiApiKey", { id: "aiApiKey", autocomplete: "off", ui: true })}
         </div>
       </details>
@@ -625,11 +632,13 @@ function renderFileList() {
   const list = $("fileList");
   list.className = `filelist ${fileView}`;
   const pdfs = !tool.accept;
+  const mixed = tool.accept === "application/pdf,image/*";
+  const showThumbs = pdfs || mixed; // pure image-only tools thumbnail via the browser directly, below
   list.innerHTML = files.map((f, i) => {
     const fi = fileInfo[i] || {};
     const pages = fi.pages ? `${fi.pages} page${fi.pages === 1 ? "" : "s"}` : "";
     const lock = fi.encrypted ? `<span class="badge">${icon("protect", "badge-icon")} Protected</span>` : "";
-    const expand = pdfs ? `<button class="expand" data-expand="${i}" title="Open a bigger preview" aria-label="Open a bigger preview of ${esc(f.name)}">${icon("expand", "ui")}</button>` : "";
+    const expand = showThumbs ? `<button class="expand" data-expand="${i}" title="Open a bigger preview" aria-label="Open a bigger preview of ${esc(f.name)}">${icon("expand", "ui")}</button>` : "";
     if (fileView === "grid") {
       return `<div class="file-card">
         ${expand}
@@ -677,7 +686,7 @@ function renderFileList() {
   $("filesHead").hidden = !pdfs && files.length < 2;
   $("viewSwitch").hidden = files.length < 2;
   $("viewSwitch").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.view === fileView));
-  if (fileView === "grid" && pdfs) loadFileThumbs();
+  if (fileView === "grid" && showThumbs) loadFileThumbs();
 }
 
 // Page-1 thumbnails for the grid view, loaded one file at a time.
@@ -685,7 +694,14 @@ async function loadFileThumbs() {
   for (const el of [...$("fileList").querySelectorAll("[data-thumb]")]) {
     const i = +el.dataset.thumb;
     const f = files[i];
-    if (!f || ((fileInfo[i] || {}).encrypted && !pwValue())) continue; // locked and no password yet
+    if (!f) continue;
+    if (isImageFile(f) && !isPdf(f)) {
+      // Images are already images: thumbnail them directly, no engine round-trip.
+      if (thumbCache.get(f) === undefined) thumbCache.set(f, { key: `${f.name}|${f.size}`, src: URL.createObjectURL(f) });
+      if (files[i] === f && el.isConnected) el.innerHTML = `<img src="${thumbCache.get(f).src}" alt="">`;
+      continue;
+    }
+    if ((fileInfo[i] || {}).encrypted && !pwValue()) continue; // locked and no password yet
     try {
       const key = `${f.name}|${f.size}|${pwValue()}`;
       if (thumbCache.get(f) !== undefined && thumbCache.get(f).key === key) {
@@ -1112,12 +1128,39 @@ async function callAiExtract(text, provider, apiKey) {
   return null;
 }
 
+const AI_PROVIDER_LABELS = { "": "Off", claude: "Claude", openai: "OpenAI" };
+
+function setAiProvider(value) {
+  $("aiProviderWrap").dataset.value = value;
+  $("aiProviderBtnLabel").textContent = AI_PROVIDER_LABELS[value] || "Off";
+  $("aiProviderBtnIcon").innerHTML = value ? icon(value, "ui") : "";
+  $("aiProviderMenu").querySelectorAll(".ai-provider-opt").forEach((b) => b.classList.toggle("on", b.dataset.value === value));
+  saveAiSettings(value, $("aiApiKey").value);
+}
+
 function initMedicalReview() {
   const { provider, apiKey } = loadAiSettings();
-  $("aiProvider").value = provider;
+  setAiProvider(provider);
   $("aiApiKey").value = apiKey;
-  $("aiProvider").addEventListener("change", () => saveAiSettings($("aiProvider").value, $("aiApiKey").value));
-  $("aiApiKey").addEventListener("change", () => saveAiSettings($("aiProvider").value, $("aiApiKey").value));
+  $("aiApiKey").placeholder = "Paste your API key";
+  $("aiApiKey").addEventListener("change", () => saveAiSettings($("aiProviderWrap").dataset.value || "", $("aiApiKey").value));
+  $("aiProviderBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = $("aiProviderMenu").hidden;
+    $("aiProviderMenu").hidden = !open;
+    $("aiProviderBtn").setAttribute("aria-expanded", String(open));
+  });
+  $("aiProviderMenu").querySelectorAll(".ai-provider-opt").forEach((b) => b.addEventListener("click", () => {
+    setAiProvider(b.dataset.value);
+    $("aiProviderMenu").hidden = true;
+    $("aiProviderBtn").setAttribute("aria-expanded", "false");
+  }));
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#aiProviderWrap")) {
+      $("aiProviderMenu").hidden = true;
+      $("aiProviderBtn")?.setAttribute("aria-expanded", "false");
+    }
+  });
   if (provider && apiKey) $("aiSettings").open = true;
   $("claimAddLine").addEventListener("click", () => { claimRows.push(blankClaimRow()); renderClaimsGrid(); });
   $("claimDelLine").addEventListener("click", () => {
@@ -1262,6 +1305,17 @@ async function showPreviewPage() {
   $("pvCount").textContent = `Page ${preview2.page} of ${preview2.total}`;
   $("pvPrev").disabled = preview2.page <= 1;
   $("pvNext").disabled = preview2.page >= preview2.total;
+  if (isImageFile(f) && !isPdf(f)) {
+    // Already an image: show it directly, no engine round-trip and no "pages".
+    $("pvFull").src = URL.createObjectURL(f);
+    $("pvFull").hidden = false;
+    $("pvSpinner").hidden = true;
+    preview2.total = 1;
+    $("pvCount").textContent = "";
+    $("pvPrev").disabled = true;
+    $("pvNext").disabled = true;
+    return;
+  }
   try {
     const fd = new FormData();
     fd.append("files", f);

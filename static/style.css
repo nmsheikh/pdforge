@@ -465,18 +465,38 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .ai-settings { margin: 0 0 18px; padding: 14px 16px; background: var(--surface-2); border-radius: var(--radius-sm); font-size: 14px; }
 .ai-settings summary { cursor: pointer; font-weight: 600; }
 .ai-settings .hint { margin: 8px 0 12px; }
-.ai-settings-row { display: flex; gap: 8px; }
-.ai-settings-row select {
-  flex: none; width: 110px; padding: 9px 10px; font: inherit; font-size: 13.5px; color: var(--text);
-  background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+.ai-settings-row { display: flex; gap: 8px; align-items: flex-start; }
+.ai-provider { position: relative; flex: none; }
+.ai-provider-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 38px; box-sizing: border-box; flex: none; width: 130px;
+  padding: 0 10px; font: inherit; font-size: 13.5px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
 }
+.ai-provider-btn span:first-child { display: inline-flex; }
+.ai-provider-btn #aiProviderBtnLabel { flex: 1; text-align: left; }
+.ai-provider-caret { width: 12px; height: 12px; flex: none; transform: rotate(90deg); color: var(--muted); }
+.ai-provider-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; min-width: 100%; padding: 6px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ai-provider-opt {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; font: inherit; font-size: 13.5px; color: var(--text);
+  background: none; border: none; border-radius: 7px; cursor: pointer; text-align: left; white-space: nowrap;
+}
+.ai-provider-opt .ui { width: 14px; height: 14px; flex: none; }
+.ai-provider-opt:hover { background: var(--surface-2); }
+.ai-provider-opt.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .ai-settings-row .pw-wrap { flex: 1; }
 .ai-settings-row input[type="password"] {
-  width: 100%; padding: 9px 34px 9px 10px; font: inherit; font-size: 13.5px; color: var(--text);
-  background: var(--surface); border: 1px solid var(--border); border-radius: 7px; box-sizing: border-box;
+  width: 100%; height: 38px; box-sizing: border-box; padding: 0 44px 0 10px; font: inherit; font-size: 13.5px;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
 }
+.ai-settings-row .eye { height: 30px; }
 
 .claims-wrap { margin-top: 22px; }
+.claims-wrap .picker-bar button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.claims-wrap .picker-bar button .ui { width: 14px; height: 14px; flex: none; }
 .claims-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 10px; }
 .claims-grid { border-collapse: collapse; width: 100%; font-size: 12.5px; white-space: nowrap; }
 .claims-grid th, .claims-grid td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; }
