@@ -861,6 +861,49 @@ function classifyBillType(text) {
   return best;
 }
 
+// ---------- claims-data extraction (best-effort regex; a smarter optional AI
+// pass in app.js can override these per unit) ----------
+
+function extractDoctorName(text) {
+  // [ \t] (not \s) so the match can't cross a line break onto the next line's text.
+  const m = (text || "").match(/Dr\.?[ \t]+[A-Z][\w.]+(?:[ \t]+[A-Z][\w.]+){0,3}/);
+  if (!m) return "";
+  // Drop a trailing qualification the name regex swept up (e.g. "Dr. Kumar MBBS").
+  const words = m[0].replace(/[ \t]+/g, " ").trim().split(" ");
+  while (words.length > 2 && QUALIFICATIONS.includes(words[words.length - 1].replace(/,$/, "").toUpperCase())) {
+    words.pop();
+  }
+  return words.join(" ").replace(/,$/, "");
+}
+
+const QUALIFICATIONS = ["MBBS", "MD", "MS", "DNB", "DM", "BDS", "MRCP", "FRCS", "BAMS", "BHMS", "MCh", "DGO"];
+function extractQualification(text) {
+  const t = text || "";
+  for (const q of QUALIFICATIONS) {
+    if (new RegExp(`\\b${q}\\b`, "i").test(t)) return q;
+  }
+  return "";
+}
+
+function extractBillNumber(text) {
+  const m = (text || "").match(/\b(?:bill|invoice|receipt)\s*(?:no\.?|#|number)?\s*[:.]?\s*(\S+)/i);
+  return m ? m[1].replace(/[,.]$/, "") : "";
+}
+
+function extractFacilityName(text, type) {
+  const lines = (text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const pattern = type === "medicine" ? /pharmacy|chemist|drug store/i : /clinic|hospital/i;
+  const line = lines.find((l) => pattern.test(l));
+  return line || "";
+}
+
+function extractAmount(text) {
+  const matches = [...(text || "").matchAll(/(?:rs\.?|inr|₹|\$)\s*([\d,]+(?:\.\d+)?)/gi)];
+  if (!matches.length) return "";
+  const values = matches.map((m) => parseFloat(m[1].replace(/,/g, "")));
+  return String(Math.max(...values));
+}
+
 // Try the page upright, then rotated, until a date is found - this solves both
 // "what's the date" and "which way is up" in the same OCR pass. Also returns the
 // OCR text (at whichever rotation won, or upright if none found) so callers that
@@ -951,6 +994,16 @@ async function arrangeByDate(fd) {
 // "other"/no-date page; finalizeMedicalBills takes the user-approved plan and the
 // same files (resubmitted, not re-uploaded) and builds the actual PDF.
 
+function claimFields(text, type) {
+  return {
+    doctorName: extractDoctorName(text),
+    qualification: extractQualification(text),
+    billNumber: extractBillNumber(text),
+    facility: extractFacilityName(text, type),
+    amount: extractAmount(text),
+  };
+}
+
 async function analyzeMedicalBills(fd) {
   const files = fd.getAll("files").filter((f) => f && f.name);
   if (!files.length) throw new ToolError("Add at least one PDF or image.");
@@ -970,11 +1023,14 @@ async function analyzeMedicalBills(fd) {
           const page = await pdfjsDoc.getPage(i);
           const canvas = await renderPage(page, 200 / 72);
           const { date, rotation, text } = await analyzePage(canvas);
+          const type = classifyBillType(text);
           units.push({
             fileIndex, pageIndex: i - 1, rotation,
             date: date ? isoDate(date) : null,
-            type: classifyBillType(text),
+            type,
             thumb: canvasThumb(rotateCanvas(canvas, rotation)),
+            text, // the optional AI extraction pass (app.js) sends this to the user's chosen provider
+            ...claimFields(text, type),
           });
           canvas.width = canvas.height = 0;
           page.cleanup();
@@ -991,11 +1047,14 @@ async function analyzeMedicalBills(fd) {
       canvas.height = bitmap.height;
       canvas.getContext("2d").drawImage(bitmap, 0, 0);
       const { date, rotation, text } = await analyzePage(canvas);
+      const type = classifyBillType(text);
       units.push({
         fileIndex, pageIndex: null, rotation,
         date: date ? isoDate(date) : null,
-        type: classifyBillType(text),
+        type,
         thumb: canvasThumb(rotateCanvas(canvas, rotation)),
+        text,
+        ...claimFields(text, type),
       });
       doneUnits++;
     }

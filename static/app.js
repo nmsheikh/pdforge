@@ -164,12 +164,34 @@ const TOOLS = [
     desc: "Sort doctor bills, prescriptions and medicine bills into one PDF: by date, then doctor bill, prescription, medicine bill.",
     endpoint: "/api/finalize-medical-bills", accept: "application/pdf,image/*", multiple: true, wide: true, button: "Build PDF",
     options: () => `
+      <details class="ai-settings" id="aiSettings">
+        <summary>Use AI for better extraction (optional)</summary>
+        <p class="hint">Off by default. When set, each document's <em>text</em> (not the image) is sent to the provider below using your own key, to fill in the claim details more accurately than pattern-matching alone can. Everything else in pdforge stays on your device.</p>
+        <div class="ai-settings-row">
+          <select id="aiProvider" data-ui="1" aria-label="AI provider">
+            <option value="">Off</option>
+            <option value="claude">Claude</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          ${passwordInput("aiApiKey", { id: "aiApiKey", autocomplete: "off", ui: true })}
+        </div>
+      </details>
       <div class="picker-bar">
         <span class="hint grow" id="medCount"></span>
       </div>
       <p class="hint">Check the date and document type pdforge found for each page, and fix anything flagged for review.</p>
       <input type="hidden" name="plan" id="planField">
-      <div class="pages med-grid" id="pageGrid"></div>`,
+      <div class="pages med-grid" id="pageGrid"></div>
+      <div class="claims-wrap">
+        <div class="picker-bar">
+          <span class="hint grow">Extracted claim data</span>
+          <button type="button" class="ghost sm" id="claimAddLine">${icon("plus", "ui")} Add Line</button>
+          <button type="button" class="ghost sm" id="claimDelLine">${icon("trash", "ui")} Delete Line</button>
+          <button type="button" class="ghost sm" id="claimCalc">Calculate</button>
+        </div>
+        <div class="claims-scroll"><table class="claims-grid" id="claimsGrid"></table></div>
+        <p class="hint" id="claimTotal"></p>
+      </div>`,
     afterRender: () => initMedicalReview(),
     validate: (fd) => {
       let plan;
@@ -1037,8 +1059,78 @@ function renderOrganizer() {
 // ---------- medical bill review (Arrange medical bills) ----------
 const BILL_TYPE_LABELS = { doctor: "Doctor bill", prescription: "Prescription", medicine: "Medicine bill", other: "Other" };
 let medUnits = [];
+let claimRows = [];
+
+// ---------- optional AI extraction (Claude/OpenAI, user's own key) ----------
+function loadAiSettings() {
+  return { provider: localStorage.getItem("pdforge:aiProvider") || "", apiKey: localStorage.getItem("pdforge:aiApiKey") || "" };
+}
+function saveAiSettings(provider, apiKey) {
+  localStorage.setItem("pdforge:aiProvider", provider);
+  localStorage.setItem("pdforge:aiApiKey", apiKey);
+}
+
+const CLAIM_EXTRACT_FIELDS = ["doctorName", "qualification", "billNumber", "facility", "amount"];
+
+// Sends this one document's OCR text (never the image) directly to the provider
+// using the visitor's own key. Never throws - a failed call just keeps whatever
+// the offline regex pass already found.
+async function callAiExtract(text, provider, apiKey) {
+  const prompt = `Extract these fields from the medical bill text below as strict JSON with exactly these keys: doctorName, qualification (e.g. MBBS, MD), billNumber, facility (pharmacy/hospital/clinic/lab name), amount (number only, no currency symbol). Use "" for anything not present. Text:\n\n${text}`;
+  try {
+    if (provider === "claude") {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 300, messages: [{ role: "user", content: prompt }] }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return JSON.parse(data.content[0].text.match(/\{[\s\S]*\}/)[0]);
+    }
+    if (provider === "openai") {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: "gpt-4o-mini", response_format: { type: "json_object" },
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return JSON.parse(data.choices[0].message.content);
+    }
+  } catch (_) {
+    // Network error, bad key, unparseable reply - keep the offline result.
+  }
+  return null;
+}
 
 function initMedicalReview() {
+  const { provider, apiKey } = loadAiSettings();
+  $("aiProvider").value = provider;
+  $("aiApiKey").value = apiKey;
+  $("aiProvider").addEventListener("change", () => saveAiSettings($("aiProvider").value, $("aiApiKey").value));
+  $("aiApiKey").addEventListener("change", () => saveAiSettings($("aiProvider").value, $("aiApiKey").value));
+  if (provider && apiKey) $("aiSettings").open = true;
+  $("claimAddLine").addEventListener("click", () => { claimRows.push(blankClaimRow()); renderClaimsGrid(); });
+  $("claimDelLine").addEventListener("click", () => {
+    const selected = $("claimsGrid").querySelector("tr.selected");
+    const i = selected ? +selected.dataset.i : claimRows.length - 1;
+    if (i >= 0) claimRows.splice(i, 1);
+    renderClaimsGrid();
+  });
+  $("claimCalc").addEventListener("click", () => {
+    const total = claimRows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+    $("claimTotal").textContent = `Total requested amount: ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  });
+
   const grid = $("pageGrid");
   grid.innerHTML = `<div class="pages-msg"><div class="spinner"></div><span id="progressMsg">Reading pages…</span></div>`;
   (async () => {
@@ -1047,11 +1139,28 @@ function initMedicalReview() {
       files.forEach((f) => fd.append("files", f));
       const data = await (await postForm("/api/analyze-medical-bills", fd)).json();
       medUnits = data.units;
+
+      if (provider && apiKey) {
+        for (let i = 0; i < medUnits.length; i++) {
+          reportAiProgress(`Reading with AI… ${i + 1}/${medUnits.length}`);
+          const found = await callAiExtract(medUnits[i].text || "", provider, apiKey);
+          if (found) CLAIM_EXTRACT_FIELDS.forEach((k) => { if (found[k]) medUnits[i][k] = String(found[k]); });
+        }
+      }
+
+      claimRows = medUnits.map((u) => claimRowFromUnit(u));
       renderMedicalReview();
+      renderClaimsGrid();
     } catch (e) {
       grid.innerHTML = `<div class="pages-msg">${esc(e.message)}</div>`;
     }
   })();
+}
+// initMedicalReview()'s own AI-progress text (distinct from the analyze pass's
+// pdforge:progress-driven #progressMsg, since that element may already be gone).
+function reportAiProgress(message) {
+  const el = $("progressMsg");
+  if (el) el.textContent = message;
 }
 
 function renderMedicalReview() {
@@ -1083,6 +1192,52 @@ function renderMedicalReview() {
     { fileIndex: u.fileIndex, pageIndex: u.pageIndex, date: u.date, type: u.type, rotation: u.rotation })));
   const flaggedCount = medUnits.filter((u) => !u.date || u.type === "other").length;
   $("medCount").textContent = `${medUnits.length} page${medUnits.length === 1 ? "" : "s"}${flaggedCount ? `, ${flaggedCount} need${flaggedCount === 1 ? "s" : ""} review` : ""}`;
+}
+
+// ---------- claims data grid (Arrange medical bills) - display/editing only,
+// separate from the plan that builds the PDF, per the user's own request ----------
+const CLAIM_COLUMNS = [
+  ["familyMember", "Family Member"], ["birthDate", "Birth Date"], ["gender", "Gender"],
+  ["doctorName", "Doctor Name"], ["qualification", "Doctor Qualification"], ["billNumber", "Bill Number"],
+  ["consultationDate", "Consultation Date"], ["billDate", "Bill Date"], ["natureOfClaim", "Nature of Claim"],
+  ["medicalAppliance", "Medical Appliance"], ["applicantRemark", "Applicant Remark"], ["facility", "Name of Pharmacy/Hospital/Laboratory"],
+  ["amount", "Requested Amount"],
+];
+
+// One row per analyzed document (not per date/claim - simplest mapping today).
+// Doctor-type documents fill "Consultation Date", medicine-type fill "Bill Date".
+function claimRowFromUnit(u) {
+  return {
+    familyMember: "", birthDate: "", gender: "",
+    doctorName: u.doctorName || "", qualification: u.qualification || "", billNumber: u.billNumber || "",
+    consultationDate: (u.type === "doctor" || u.type === "prescription") ? (u.date || "") : "",
+    billDate: u.type === "medicine" ? (u.date || "") : "",
+    natureOfClaim: "", medicalAppliance: "", applicantRemark: "",
+    facility: u.facility || "", exceptionAllowed: false, amount: u.amount || "",
+  };
+}
+const blankClaimRow = () => claimRowFromUnit({});
+
+function renderClaimsGrid() {
+  const table = $("claimsGrid");
+  const head = `<tr><th>Line No.</th>${CLAIM_COLUMNS.map(([, label]) => `<th>${esc(label)}</th>`).join("")}<th>Exception Allowed</th></tr>`;
+  const body = claimRows.map((row, i) => `
+    <tr data-i="${i}">
+      <td class="claim-line">${String(i + 1).padStart(4, "0")}</td>
+      ${CLAIM_COLUMNS.map(([key]) => `<td><input data-field="${key}" value="${esc(row[key] || "")}"></td>`).join("")}
+      <td class="claim-check"><input type="checkbox" data-field="exceptionAllowed" ${row.exceptionAllowed ? "checked" : ""}></td>
+    </tr>`).join("");
+  table.innerHTML = head + body;
+
+  table.querySelectorAll("tr[data-i] input").forEach((el) => el.addEventListener("change", () => {
+    const i = +el.closest("tr").dataset.i;
+    claimRows[i][el.dataset.field] = el.type === "checkbox" ? el.checked : el.value;
+  }));
+  table.querySelectorAll("tr[data-i]").forEach((tr) => tr.addEventListener("focusin", () => {
+    table.querySelectorAll("tr").forEach((r) => r.classList.remove("selected"));
+    tr.classList.add("selected");
+  }));
+  $("claimTotal").textContent = "";
 }
 
 // ---------- expanded preview ----------

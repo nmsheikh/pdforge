@@ -249,6 +249,24 @@ async function runEngine() {
         read.map((t) => t.replace(/\s+/g, " ").trim()).join(" || "));
     }
   }
+
+  // Claims-data extraction: doctor name/qualification/bill number/facility/amount
+  // pulled from a single richer bill, offline (no AI key set in this test).
+  const claimBill = document.createElement("canvas");
+  claimBill.width = 500; claimBill.height = 350;
+  const cctx = claimBill.getContext("2d");
+  cctx.fillStyle = "#fff"; cctx.fillRect(0, 0, 500, 350);
+  cctx.fillStyle = "#000"; cctx.font = "22px sans-serif";
+  ["Dr. Ramesh Kumar MBBS", "City Care Clinic", "12-01-2026", "Bill No: INV-4521", "Consultation Fee", "Total Rs. 850.00"]
+    .forEach((line, i) => cctx.fillText(line, 20, 40 + i * 34));
+  const claimBillBytes = new Uint8Array(await (await new Promise((res) => claimBill.toBlob(res, "image/png"))).arrayBuffer());
+  r = await call("/api/analyze-medical-bills", {}, [asFile(claimBillBytes, "claim.png", "image/png")]);
+  const claimUnit = r.status === 200 ? r.body.units[0] : null;
+  check("claims data: doctor name (no trailing qualification or next line)", claimUnit?.doctorName === "Dr. Ramesh Kumar", claimUnit?.doctorName);
+  check("claims data: qualification", claimUnit?.qualification === "MBBS", claimUnit?.qualification);
+  check("claims data: bill number", claimUnit?.billNumber === "INV-4521", claimUnit?.billNumber);
+  check("claims data: facility", claimUnit?.facility === "City Care Clinic", claimUnit?.facility);
+  check("claims data: amount", claimUnit?.amount === "850", claimUnit?.amount);
 }
 
 const errors = [];

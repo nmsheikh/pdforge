@@ -462,6 +462,35 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
   border: 1px solid var(--border); border-radius: 7px;
 }
 
+.ai-settings { margin: 0 0 18px; padding: 14px 16px; background: var(--surface-2); border-radius: var(--radius-sm); font-size: 14px; }
+.ai-settings summary { cursor: pointer; font-weight: 600; }
+.ai-settings .hint { margin: 8px 0 12px; }
+.ai-settings-row { display: flex; gap: 8px; }
+.ai-settings-row select {
+  flex: none; width: 110px; padding: 9px 10px; font: inherit; font-size: 13.5px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+}
+.ai-settings-row .pw-wrap { flex: 1; }
+.ai-settings-row input[type="password"] {
+  width: 100%; padding: 9px 34px 9px 10px; font: inherit; font-size: 13.5px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 7px; box-sizing: border-box;
+}
+
+.claims-wrap { margin-top: 22px; }
+.claims-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 10px; }
+.claims-grid { border-collapse: collapse; width: 100%; font-size: 12.5px; white-space: nowrap; }
+.claims-grid th, .claims-grid td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.claims-grid th { background: var(--surface-2); color: var(--muted); font-weight: 600; position: sticky; top: 0; }
+.claims-grid tr.selected td { background: var(--accent-soft); }
+.claims-grid td.claim-line { color: var(--muted); font-variant-numeric: tabular-nums; }
+.claims-grid td.claim-check { text-align: center; }
+.claims-grid input:not([type="checkbox"]) {
+  width: 130px; padding: 5px 7px; font: inherit; font-size: 12.5px; color: var(--text);
+  background: var(--surface); border: 1px solid transparent; border-radius: 6px;
+}
+.claims-grid input:not([type="checkbox"]):hover, .claims-grid input:not([type="checkbox"]):focus { border-color: var(--border); }
+#claimTotal { text-align: right; font-weight: 600; color: var(--text); }
+
 /* ---------- Result ---------- */
 .saved-note { margin: 0 0 6px; font-size: 14px; color: var(--ok); font-weight: 600; word-break: break-all; }
 
