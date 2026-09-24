@@ -194,14 +194,15 @@ async function runEngine() {
     check("arrange by date: chronological order", /1 January/.test(read[0]) && /2 January/.test(read[1]) && /3 January/.test(read[2]), read.join(" | "));
   }
 
-  // Medical bills: classification (keyword matching), flagging of the unrecognizable
-  // page, and date-then-visit-order sorting once the user fills in the flagged one.
+  // Medical bills: classification (keyword matching), the not-medical filter,
+  // flagging of the unrecognizable page, and date-then-visit-order sorting once
+  // the user fills in the flagged one.
   r = await call("/api/analyze-medical-bills", {}, [
     asFile(await makeDatedImage("12-01-2026", 0, "Dr. Smith Clinic - Consultation fee"), "doctor.png", "image/png"),
     asFile(await makeDatedImage("12-01-2026", 0, "Prescription - Rx - take as directed"), "rx.png", "image/png"),
     asFile(await makeDatedImage("12-01-2026", 0, "City Pharmacy - Tablet Capsule MRP"), "meds.png", "image/png"),
     asFile(await makeDatedImage("10-01-2026", 0, "Dr. Jones Clinic - Consultation fee"), "earlier-doctor.png", "image/png"),
-    asFile(await makeDatedImage("", 0, "random unrelated receipt text"), "unknown.png", "image/png"), // no date, no keywords
+    asFile(await makeDatedImage("", 0, "random unrelated receipt text"), "unknown.png", "image/png"), // no date, no medical signal at all
   ]);
   const analysis = r.status === 200 ? r.body : null;
   check("medical bills: analyze runs", r.status === 200 && analysis?.units?.length === 5, `${r.ms}ms ${r.body?.error || ""}`);
@@ -210,8 +211,16 @@ async function runEngine() {
     check("medical bills: classifies doctor bill", doctor.type === "doctor", doctor.type);
     check("medical bills: classifies prescription", rx.type === "prescription", rx.type);
     check("medical bills: classifies medicine bill", meds.type === "medicine", meds.type);
-    check("medical bills: unrecognizable page flagged, not guessed", unknown.type === "other" && !unknown.date,
+    check("medical bills: filters out a non-medical file (not just 'other')", unknown.type === "not-medical" && !unknown.date,
       `type=${unknown.type} date=${unknown.date}`);
+    check("medical bills: non-medical file gets no extracted fields", !unknown.doctorName && !unknown.billNumber && !unknown.amount,
+      JSON.stringify({ doctorName: unknown.doctorName, billNumber: unknown.billNumber, amount: unknown.amount }));
+
+    const otherR = await call("/api/analyze-medical-bills", {}, [
+      asFile(await makeDatedImage("12-01-2026", 0, "General Hospital records"), "vague.png", "image/png"),
+    ]);
+    check("medical bills: medical-but-unclear text is 'other', not filtered out",
+      otherR.status === 200 && otherR.body.units[0].type === "other", otherR.body.units?.[0]?.type);
 
     // Simulate the user filling in the flagged page during review, then finalize.
     const plan = analysis.units.map((u, i) => (i === 4 ? { ...u, date: "2026-01-11", type: "medicine" } : u));

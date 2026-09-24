@@ -205,7 +205,7 @@ const TOOLS = [
       try { plan = JSON.parse(fd.get("plan") || "[]"); } catch (_) { return "Something went wrong reading the pages."; }
       if (!plan.length) return "No pages to arrange.";
       if (plan.some((p) => !p.date)) return "Set the date for every page flagged for review.";
-      if (plan.some((p) => p.type === "other")) return "Set the document type for every page flagged for review.";
+      if (plan.some((p) => p.type === "other" || p.type === "not-medical")) return "Set the document type for every page flagged for review.";
       return null;
     },
   },
@@ -1073,7 +1073,10 @@ function renderOrganizer() {
 }
 
 // ---------- medical bill review (Arrange medical bills) ----------
-const BILL_TYPE_LABELS = { doctor: "Doctor bill", prescription: "Prescription", medicine: "Medicine bill", other: "Other" };
+const BILL_TYPE_LABELS = {
+  doctor: "Doctor bill", prescription: "Prescription", medicine: "Medicine bill",
+  other: "Other (medical)", "not-medical": "Not a medical document",
+};
 let medUnits = [];
 let claimRows = [];
 
@@ -1209,11 +1212,12 @@ function reportAiProgress(message) {
 function renderMedicalReview() {
   const grid = $("pageGrid");
   grid.innerHTML = medUnits.map((u, i) => {
-    const flagged = !u.date || u.type === "other";
+    const notMedical = u.type === "not-medical";
+    const flagged = !u.date || u.type === "other" || notMedical;
     return `
     <div class="page med-page${flagged ? " needs-review" : ""}" data-i="${i}">
       <img src="${u.thumb}" alt="Page ${i + 1}">
-      ${flagged ? `<span class="badge med-flag">${icon("eye", "badge-icon")} Needs review</span>` : ""}
+      ${flagged ? `<span class="badge med-flag">${icon("eye", "badge-icon")} ${notMedical ? "Not medical" : "Needs review"}</span>` : ""}
       <div class="med-fields">
         <select data-field="type" aria-label="Document type">
           ${Object.entries(BILL_TYPE_LABELS).map(([v, label]) => `<option value="${v}" ${u.type === v ? "selected" : ""}>${esc(label)}</option>`).join("")}
@@ -1233,7 +1237,7 @@ function renderMedicalReview() {
 
   $("planField").value = JSON.stringify(medUnits.map((u) => (
     { fileIndex: u.fileIndex, pageIndex: u.pageIndex, date: u.date, type: u.type, rotation: u.rotation })));
-  const flaggedCount = medUnits.filter((u) => !u.date || u.type === "other").length;
+  const flaggedCount = medUnits.filter((u) => !u.date || u.type === "other" || u.type === "not-medical").length;
   $("medCount").textContent = `${medUnits.length} page${medUnits.length === 1 ? "" : "s"}${flaggedCount ? `, ${flaggedCount} need${flaggedCount === 1 ? "s" : ""} review` : ""}`;
 }
 

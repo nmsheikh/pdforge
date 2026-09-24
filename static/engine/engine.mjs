@@ -841,16 +841,27 @@ function extractDate(text) {
 
 // ---------- medical bill classification ----------
 
-const BILL_TYPES = ["doctor", "prescription", "medicine", "other"]; // sub-order for same-day documents
+// sub-order for same-day documents; "not-medical" always sorts last
+const BILL_TYPES = ["doctor", "prescription", "medicine", "other", "not-medical"];
 const BILL_KEYWORDS = {
   doctor: ["consultation", "consult", "opd", "visit fee", "doctor", "dr.", "physician", "clinic", "checkup", "check-up"],
   prescription: ["prescription", "rx", "prescribed", "sig:", "dosage", "take as directed", "refill"],
   medicine: ["pharmacy", "medicine", "medicines", "tablet", "capsule", "syrup", "chemist", "drug store", "mrp", "batch no"],
 };
+// Broader than BILL_KEYWORDS: any hint at all that this is a medical/health
+// document, even if it doesn't clearly say which of the three sub-types it is.
+const MEDICAL_SIGNAL_WORDS = [
+  ...BILL_KEYWORDS.doctor, ...BILL_KEYWORDS.prescription, ...BILL_KEYWORDS.medicine,
+  "hospital", "medical", "health", "patient", "diagnosis", "treatment", "lab test",
+  "laboratory", "nursing home", "surgeon", "surgery", "ward", "admission", "discharge summary",
+];
 
-// Keyword-count classification: whichever category has the most hits wins; no
-// hits at all (or a tie) means "other" - flagged for the user to assign by hand
-// rather than guessed, since a wrong guess here silently misfiles a document.
+// Keyword-count classification: whichever sub-type has the most hits wins. No hits
+// at all for doctor/prescription/medicine, but SOME broader medical signal, means
+// "other" (a medical document, just an unclear kind) - flagged for the user to
+// assign by hand. No medical signal at all means "not-medical": this filters out
+// files that clearly aren't hospital/pharmacy paperwork (a random photo, an
+// unrelated PDF) instead of quietly treating them as just another "other" bill.
 function classifyBillType(text) {
   const t = (text || "").toLowerCase();
   let best = "other", bestScore = 0;
@@ -858,7 +869,8 @@ function classifyBillType(text) {
     const score = BILL_KEYWORDS[type].reduce((n, kw) => n + (t.includes(kw) ? 1 : 0), 0);
     if (score > bestScore) { best = type; bestScore = score; }
   }
-  return best;
+  if (bestScore > 0) return best;
+  return MEDICAL_SIGNAL_WORDS.some((kw) => t.includes(kw)) ? "other" : "not-medical";
 }
 
 // ---------- claims-data extraction (best-effort regex; a smarter optional AI
@@ -995,6 +1007,9 @@ async function arrangeByDate(fd) {
 // same files (resubmitted, not re-uploaded) and builds the actual PDF.
 
 function claimFields(text, type) {
+  // Don't run bill-shaped regexes over a document that isn't a bill at all -
+  // they can still coincidentally match noise and produce junk fields.
+  if (type === "not-medical") return { doctorName: "", qualification: "", billNumber: "", facility: "", amount: "" };
   return {
     doctorName: extractDoctorName(text),
     qualification: extractQualification(text),
