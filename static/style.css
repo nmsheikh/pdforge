@@ -474,7 +474,7 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
   position: relative; width: min(560px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
   background: var(--surface); color: var(--text); border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow-lg);
 }
-.modal h2 { margin: 0 44px 14px 0; }
+.modal h2 { margin: 0 44px 26px 0; font-size: 40px; }
 .modal a:not(.dl-btn):not(.primary) { color: var(--accent); }
 .modal-close {
   position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border: none; border-radius: var(--pill);
