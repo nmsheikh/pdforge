@@ -502,6 +502,7 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-h
 .dl-help { margin: 18px 0 8px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; }
 .dl-help p { margin: 0; color: var(--muted); line-height: 1.5; }
 .dl-help strong { color: var(--text); }
+.dl-steps { margin-top: 16px; }
 .dl-steps p + p { margin-top: 10px; }
 .dl-code { margin: 10px 0 0; position: relative; }
 .dl-code code {
