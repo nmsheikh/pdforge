@@ -222,6 +222,14 @@ async function runEngine() {
     check("medical bills: medical-but-unclear text is 'other', not filtered out",
       otherR.status === 200 && otherR.body.units[0].type === "other", otherR.body.units?.[0]?.type);
 
+    // A resume mentioning a clinic/hospital in someone's work history must not
+    // pass as a medical document just because it contains those words.
+    const resumeR = await call("/api/analyze-medical-bills", {}, [
+      asFile(await makeDatedImage("", 0, "Career objective: Work Experience at City Hospital Clinic"), "resume.png", "image/png"),
+    ]);
+    check("medical bills: a resume is filtered out even with clinic/hospital wording",
+      resumeR.status === 200 && resumeR.body.units[0].type === "not-medical", resumeR.body.units?.[0]?.type);
+
     // Simulate the user filling in the flagged page during review, then finalize.
     const plan = analysis.units.map((u, i) => (i === 4 ? { ...u, date: "2026-01-11", type: "medicine" } : u));
     r = await call("/api/finalize-medical-bills", { plan: JSON.stringify(plan) }, [

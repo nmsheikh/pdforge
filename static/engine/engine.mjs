@@ -862,8 +862,20 @@ const MEDICAL_SIGNAL_WORDS = [
 // assign by hand. No medical signal at all means "not-medical": this filters out
 // files that clearly aren't hospital/pharmacy paperwork (a random photo, an
 // unrelated PDF) instead of quietly treating them as just another "other" bill.
+// A resume/CV can easily mention "clinic", "patient care" or "health" from someone's
+// work history, which would otherwise score as a medical document. Structural resume
+// wording (2+ hits) overrides any keyword match below - nobody's CV is a hospital bill.
+const RESUME_SIGNAL_WORDS = [
+  "resume", "curriculum vitae", "career objective", "professional summary", "work experience",
+  "employment history", "references available", "linkedin.com/in/", "objective:", "education:", "skills:",
+];
+function looksLikeResume(t) {
+  return RESUME_SIGNAL_WORDS.reduce((n, kw) => n + (t.includes(kw) ? 1 : 0), 0) >= 2;
+}
+
 function classifyBillType(text) {
   const t = (text || "").toLowerCase();
+  if (looksLikeResume(t)) return "not-medical";
   let best = "other", bestScore = 0;
   for (const type of ["doctor", "prescription", "medicine"]) {
     const score = BILL_KEYWORDS[type].reduce((n, kw) => n + (t.includes(kw) ? 1 : 0), 0);
