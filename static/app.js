@@ -170,7 +170,7 @@ const TOOLS = [
       <p class="hint">Check the date and document type pdforge found for each page, and fix anything flagged for review.</p>
       <input type="hidden" name="plan" id="planField">
       <div class="pages med-grid" id="pageGrid"></div>
-      <div class="picker-bar">
+      <div class="picker-bar extract-bar">
         <span class="hint grow">When everything above looks right, extract the claim data and sort the documents by date (doctor bill, then prescription, then medicine bill).</span>
         <button type="button" class="primary sm" id="extractSortBtn" disabled>${icon("extract", "ui")} Extract and sort</button>
       </div>
