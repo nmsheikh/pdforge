@@ -1056,7 +1056,7 @@ async function analyzeMedicalBills(fd) {
             date: date ? isoDate(date) : null,
             type,
             thumb: canvasThumb(rotateCanvas(canvas, rotation)),
-            text, // the optional AI extraction pass (app.js) sends this to the user's chosen provider
+            text, // the raw OCR text, kept for debugging extraction misses - never sent anywhere
             ...claimFields(text, type),
           });
           canvas.width = canvas.height = 0;

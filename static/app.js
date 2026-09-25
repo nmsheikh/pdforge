@@ -26,8 +26,6 @@ const ICONS = {
   unlock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
   "arrange-by-date": '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
   "medical-bills": '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h1"/>',
-  claude: '<path d="M12 2v20"/><path d="M4.5 6.5l15 11"/><path d="M19.5 6.5l-15 11"/>',
-  openai: '<circle cx="12" cy="6.5" r="2.5"/><circle cx="6.5" cy="16" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/><path d="M12 9v3.5M6.5 13.5 12 12.5M17.5 13.5 12 12.5"/>',
   protect: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   // interface controls
   arrowUp: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
@@ -166,23 +164,6 @@ const TOOLS = [
     desc: "Sort doctor bills, prescriptions and medicine bills into one PDF: by date, then doctor bill, prescription, medicine bill.",
     endpoint: "/api/finalize-medical-bills", accept: "application/pdf,image/*", multiple: true, wide: true, button: "Build PDF",
     options: () => `
-      <details class="ai-settings" id="aiSettings">
-        <summary>Use AI for better extraction (optional)</summary>
-        <p class="hint">Off by default. When set, each document's <em>text</em> (not the image) is sent to the provider below using your own key, to fill in the claim details more accurately than pattern-matching alone can. Everything else in pdforge stays on your device.</p>
-        <div class="ai-settings-row">
-          <div class="ai-provider" id="aiProviderWrap">
-            <button type="button" class="ai-provider-btn" id="aiProviderBtn" aria-haspopup="listbox" aria-expanded="false">
-              <span id="aiProviderBtnIcon"></span><span id="aiProviderBtnLabel">Off</span>${icon("chevronRight", "ui ai-provider-caret")}
-            </button>
-            <div class="ai-provider-menu" id="aiProviderMenu" role="listbox" hidden>
-              <button type="button" class="ai-provider-opt" data-value="" role="option">Off</button>
-              <button type="button" class="ai-provider-opt" data-value="claude" role="option">${icon("claude", "ui")} Claude</button>
-              <button type="button" class="ai-provider-opt" data-value="openai" role="option">${icon("openai", "ui")} OpenAI</button>
-            </div>
-          </div>
-          ${passwordInput("aiApiKey", { id: "aiApiKey", autocomplete: "off", ui: true })}
-        </div>
-      </details>
       <div class="picker-bar">
         <span class="hint grow" id="medCount"></span>
       </div>
@@ -1080,91 +1061,7 @@ const BILL_TYPE_LABELS = {
 let medUnits = [];
 let claimRows = [];
 
-// ---------- optional AI extraction (Claude/OpenAI, user's own key) ----------
-function loadAiSettings() {
-  return { provider: localStorage.getItem("pdforge:aiProvider") || "", apiKey: localStorage.getItem("pdforge:aiApiKey") || "" };
-}
-function saveAiSettings(provider, apiKey) {
-  localStorage.setItem("pdforge:aiProvider", provider);
-  localStorage.setItem("pdforge:aiApiKey", apiKey);
-}
-
-const CLAIM_EXTRACT_FIELDS = ["doctorName", "qualification", "billNumber", "facility", "amount"];
-
-// Sends this one document's OCR text (never the image) directly to the provider
-// using the visitor's own key. Never throws - a failed call just keeps whatever
-// the offline regex pass already found.
-async function callAiExtract(text, provider, apiKey) {
-  const prompt = `Extract these fields from the medical bill text below as strict JSON with exactly these keys: doctorName, qualification (e.g. MBBS, MD), billNumber, facility (pharmacy/hospital/clinic/lab name), amount (number only, no currency symbol). Use "" for anything not present. Text:\n\n${text}`;
-  try {
-    if (provider === "claude") {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 300, messages: [{ role: "user", content: prompt }] }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return JSON.parse(data.content[0].text.match(/\{[\s\S]*\}/)[0]);
-    }
-    if (provider === "openai") {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: "gpt-4o-mini", response_format: { type: "json_object" },
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return JSON.parse(data.choices[0].message.content);
-    }
-  } catch (_) {
-    // Network error, bad key, unparseable reply - keep the offline result.
-  }
-  return null;
-}
-
-const AI_PROVIDER_LABELS = { "": "Off", claude: "Claude", openai: "OpenAI" };
-
-function setAiProvider(value) {
-  $("aiProviderWrap").dataset.value = value;
-  $("aiProviderBtnLabel").textContent = AI_PROVIDER_LABELS[value] || "Off";
-  $("aiProviderBtnIcon").innerHTML = value ? icon(value, "ui") : "";
-  $("aiProviderMenu").querySelectorAll(".ai-provider-opt").forEach((b) => b.classList.toggle("on", b.dataset.value === value));
-  saveAiSettings(value, $("aiApiKey").value);
-}
-
 function initMedicalReview() {
-  const { provider, apiKey } = loadAiSettings();
-  setAiProvider(provider);
-  $("aiApiKey").value = apiKey;
-  $("aiApiKey").placeholder = "Paste your API key";
-  $("aiApiKey").addEventListener("change", () => saveAiSettings($("aiProviderWrap").dataset.value || "", $("aiApiKey").value));
-  $("aiProviderBtn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    const open = $("aiProviderMenu").hidden;
-    $("aiProviderMenu").hidden = !open;
-    $("aiProviderBtn").setAttribute("aria-expanded", String(open));
-  });
-  $("aiProviderMenu").querySelectorAll(".ai-provider-opt").forEach((b) => b.addEventListener("click", () => {
-    setAiProvider(b.dataset.value);
-    $("aiProviderMenu").hidden = true;
-    $("aiProviderBtn").setAttribute("aria-expanded", "false");
-  }));
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest("#aiProviderWrap")) {
-      $("aiProviderMenu").hidden = true;
-      $("aiProviderBtn")?.setAttribute("aria-expanded", "false");
-    }
-  });
-  if (provider && apiKey) $("aiSettings").open = true;
   $("claimAddLine").addEventListener("click", () => { claimRows.push(blankClaimRow()); renderClaimsGrid(); });
   $("claimDelLine").addEventListener("click", () => {
     const selected = $("claimsGrid").querySelector("tr.selected");
@@ -1185,15 +1082,6 @@ function initMedicalReview() {
       files.forEach((f) => fd.append("files", f));
       const data = await (await postForm("/api/analyze-medical-bills", fd)).json();
       medUnits = data.units;
-
-      if (provider && apiKey) {
-        for (let i = 0; i < medUnits.length; i++) {
-          reportAiProgress(`Reading with AI… ${i + 1}/${medUnits.length}`);
-          const found = await callAiExtract(medUnits[i].text || "", provider, apiKey);
-          if (found) CLAIM_EXTRACT_FIELDS.forEach((k) => { if (found[k]) medUnits[i][k] = String(found[k]); });
-        }
-      }
-
       claimRows = medUnits.map((u) => claimRowFromUnit(u));
       renderMedicalReview();
       renderClaimsGrid();
@@ -1201,12 +1089,6 @@ function initMedicalReview() {
       grid.innerHTML = `<div class="pages-msg">${esc(e.message)}</div>`;
     }
   })();
-}
-// initMedicalReview()'s own AI-progress text (distinct from the analyze pass's
-// pdforge:progress-driven #progressMsg, since that element may already be gone).
-function reportAiProgress(message) {
-  const el = $("progressMsg");
-  if (el) el.textContent = message;
 }
 
 function renderMedicalReview() {
