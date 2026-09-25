@@ -162,7 +162,7 @@ const TOOLS = [
     id: "medical-bills", category: "organize", title: "Arrange medical bills", isNew: true, localOnly: true,
     guard: () => (!LOCAL ? "This tool reads each page with OCR on your device, so it only works in the desktop app." : null),
     desc: "Sort doctor bills, prescriptions and medicine bills into one PDF: by date, then doctor bill, prescription, medicine bill.",
-    endpoint: "/api/finalize-medical-bills", accept: "application/pdf,image/*", multiple: true, wide: true, button: "Build PDF",
+    endpoint: "/api/finalize-medical-bills", accept: "application/pdf,image/*", multiple: true, wide: true, button: "Download PDF",
     options: () => `
       <div class="picker-bar">
         <span class="hint grow" id="medCount"></span>
@@ -170,7 +170,11 @@ const TOOLS = [
       <p class="hint">Check the date and document type pdforge found for each page, and fix anything flagged for review.</p>
       <input type="hidden" name="plan" id="planField">
       <div class="pages med-grid" id="pageGrid"></div>
-      <div class="claims-wrap">
+      <div class="picker-bar">
+        <span class="hint grow">When everything above looks right, extract the claim data and sort the documents by date (doctor bill, then prescription, then medicine bill).</span>
+        <button type="button" class="primary sm" id="extractSortBtn">${icon("extract", "ui")} Extract and sort</button>
+      </div>
+      <div class="claims-wrap" id="claimsWrap" hidden>
         <div class="picker-bar">
           <span class="hint grow">Extracted claim data</span>
           <button type="button" class="ghost sm" id="claimAddLine">${icon("plus", "ui")} Add Line</button>
@@ -1073,6 +1077,18 @@ function initMedicalReview() {
     const total = claimRows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
     $("claimTotal").textContent = `Total requested amount: ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   });
+  // The claim-data table and the download button only appear once the person has
+  // reviewed the OCR results above and explicitly asks to extract and sort them -
+  // medUnits is already date-then-type sorted at that point, so building the rows
+  // straight from it gives the doctor/prescription/medicine order for free.
+  $("runBtn").hidden = true;
+  $("claimsWrap").hidden = true;
+  $("extractSortBtn").addEventListener("click", () => {
+    claimRows = medUnits.map((u) => claimRowFromUnit(u));
+    renderClaimsGrid();
+    $("claimsWrap").hidden = false;
+    $("runBtn").hidden = false;
+  });
 
   const grid = $("pageGrid");
   grid.innerHTML = `<div class="pages-msg"><div class="spinner"></div><span id="progressMsg">Reading pages…</span></div>`;
@@ -1083,9 +1099,8 @@ function initMedicalReview() {
       const data = await (await postForm("/api/analyze-medical-bills", fd)).json();
       medUnits = data.units;
       sortMedUnits();
-      claimRows = medUnits.map((u) => claimRowFromUnit(u));
+      claimRows = [];
       renderMedicalReview();
-      renderClaimsGrid();
     } catch (e) {
       grid.innerHTML = `<div class="pages-msg">${esc(e.message)}</div>`;
     }
@@ -1127,6 +1142,11 @@ function renderMedicalReview() {
       medUnits[i][el.dataset.field] = el.value || null;
       sortMedUnits();
       renderMedicalReview();
+      // A correction here can change the sort order or a claim field the table
+      // already extracted - make the person re-run "Extract and sort" rather than
+      // downloading a PDF that no longer matches what the table shows.
+      $("claimsWrap").hidden = true;
+      $("runBtn").hidden = true;
     }));
   });
 
