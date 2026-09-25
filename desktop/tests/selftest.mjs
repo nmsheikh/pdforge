@@ -279,11 +279,30 @@ async function runEngine() {
   const claimBillBytes = new Uint8Array(await (await new Promise((res) => claimBill.toBlob(res, "image/png"))).arrayBuffer());
   r = await call("/api/analyze-medical-bills", {}, [asFile(claimBillBytes, "claim.png", "image/png")]);
   const claimUnit = r.status === 200 ? r.body.units[0] : null;
-  check("claims data: doctor name (no trailing qualification or next line)", claimUnit?.doctorName === "Dr. Ramesh Kumar", claimUnit?.doctorName);
+  check("claims data: doctor name has no 'Dr.' prefix baked in", claimUnit?.doctorName === "Ramesh Kumar", claimUnit?.doctorName);
   check("claims data: qualification", claimUnit?.qualification === "MBBS", claimUnit?.qualification);
   check("claims data: bill number", claimUnit?.billNumber === "INV-4521", claimUnit?.billNumber);
   check("claims data: facility", claimUnit?.facility === "City Care Clinic", claimUnit?.facility);
   check("claims data: amount", claimUnit?.amount === "850", claimUnit?.amount);
+
+  // Regression checks for two real false-positives found on actual bills (not
+  // synthetic text): "Bill Cum Receipt" (a document title, not a number) was
+  // read as bill number "Cum"; "DRUGS"/"DRESSING" etc. (all-caps, common on
+  // real bills) were read as "Dr" + a capitalized "name".
+  const falsePosBill = document.createElement("canvas");
+  falsePosBill.width = 500; falsePosBill.height = 200;
+  const fctx = falsePosBill.getContext("2d");
+  fctx.fillStyle = "#fff"; fctx.fillRect(0, 0, 500, 200);
+  fctx.fillStyle = "#000"; fctx.font = "22px sans-serif";
+  ["BILL CUM RECEIPT", "12-01-2026", "DRUGS / PRESCRIPTIONS", "Total Rs. 500.00"]
+    .forEach((line, i) => fctx.fillText(line, 20, 30 + i * 34));
+  const falsePosBytes = new Uint8Array(await (await new Promise((res) => falsePosBill.toBlob(res, "image/png"))).arrayBuffer());
+  r = await call("/api/analyze-medical-bills", {}, [asFile(falsePosBytes, "falsepos.png", "image/png")]);
+  const falsePosUnit = r.status === 200 ? r.body.units[0] : null;
+  check("claims data: 'Bill Cum Receipt' title isn't read as a bill number",
+    !falsePosUnit?.billNumber, falsePosUnit?.billNumber);
+  check("claims data: 'DRUGS' isn't read as a doctor name",
+    !falsePosUnit?.doctorName, falsePosUnit?.doctorName);
 }
 
 const errors = [];

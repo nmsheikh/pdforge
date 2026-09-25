@@ -804,6 +804,12 @@ const MONTHS = {
 
 // Best-effort: pull the first recognizable date out of noisy OCR text. Returns a
 // Date, or null. No date in the text is a normal outcome (blank page, no date visible).
+// Real bills routinely have several dates on one page (a patient's date of
+// birth, a bill date, an admission/discharge date, a medicine's expiry date...).
+// Grabbing the first date-shaped text anywhere is how a DOB or an expiry date
+// ends up mistaken for the bill's own date. Instead, find every date-shaped
+// match, then use the label text just before each one to exclude the ones that
+// are never the right answer (DOB, expiry) and prefer the ones that are.
 function extractDate(text) {
   const t = (text || "").replace(/\s+/g, " ");
   const validDay = (d) => d >= 1 && d <= 31;
@@ -812,31 +818,48 @@ function extractDate(text) {
     const d = new Date(year, month, day);
     return d.getMonth() === month ? d : null; // rejects e.g. 31 Feb rolling into March
   };
-  let m = t.match(/\b(\d{1,2})(?:st|nd|rd|th)?[\s.-]+([A-Za-z]{3,9})\.?[\s,.-]*(\d{4})?\b/);
-  if (m && MONTHS[m[2].toLowerCase()] !== undefined) {
-    const date = build(m[3] ? +m[3] : new Date().getFullYear(), MONTHS[m[2].toLowerCase()], +m[1]);
-    if (date) return date;
+  const normYear = (y) => (y < 100 ? y + (y < 50 ? 2000 : 1900) : y);
+
+  const PATTERNS = [
+    { re: /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g, parse: (m) => build(+m[1], +m[2] - 1, +m[3]) },
+    {
+      re: /\b(\d{1,2})(?:st|nd|rd|th)?[\s.-]+([A-Za-z]{3,9})\.?[\s,.-]*(\d{2,4})?\b/g,
+      parse: (m) => (MONTHS[m[2].toLowerCase()] !== undefined
+        ? build(m[3] ? normYear(+m[3]) : new Date().getFullYear(), MONTHS[m[2].toLowerCase()], +m[1]) : null),
+    },
+    {
+      re: /\b([A-Za-z]{3,9})\.?[\s.-]+(\d{1,2})(?:st|nd|rd|th)?[\s,.-]*(\d{2,4})?\b/g,
+      parse: (m) => (MONTHS[m[1].toLowerCase()] !== undefined
+        ? build(m[3] ? normYear(+m[3]) : new Date().getFullYear(), MONTHS[m[1].toLowerCase()], +m[2]) : null),
+    },
+    {
+      re: /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b/g,
+      parse: (m) => {
+        const year = normYear(+m[3]);
+        // Day-first (DD/MM/YYYY) unless the first number can't be a month, in
+        // which case it must be interpreted month-first instead.
+        return build(year, +m[2] - 1, +m[1]) || build(year, +m[1] - 1, +m[2]);
+      },
+    },
+  ];
+
+  const candidates = [];
+  for (const { re, parse } of PATTERNS) {
+    for (const m of t.matchAll(re)) {
+      const date = parse(m);
+      if (date) candidates.push({ date, index: m.index });
+    }
   }
-  m = t.match(/\b([A-Za-z]{3,9})\.?[\s.-]+(\d{1,2})(?:st|nd|rd|th)?[\s,.-]*(\d{4})?\b/);
-  if (m && MONTHS[m[1].toLowerCase()] !== undefined) {
-    const date = build(m[3] ? +m[3] : new Date().getFullYear(), MONTHS[m[1].toLowerCase()], +m[2]);
-    if (date) return date;
-  }
-  m = t.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
-  if (m) {
-    const date = build(+m[1], +m[2] - 1, +m[3]);
-    if (date) return date;
-  }
-  m = t.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b/);
-  if (m) {
-    let year = +m[3];
-    if (year < 100) year += year < 50 ? 2000 : 1900;
-    // Day-first (DD/MM/YYYY) unless the first number can't be a month, in which case
-    // it must be interpreted month-first instead.
-    const date = build(year, +m[2] - 1, +m[1]) || build(year, +m[1] - 1, +m[2]);
-    if (date) return date;
-  }
-  return null;
+  if (!candidates.length) return null;
+
+  const contextBefore = (index) => t.slice(Math.max(0, index - 30), index);
+  const NEVER_THE_DATE = /\b(dob|date of birth|birth|expiry|exp\.?\s*date|mfg|manufactur)/i;
+  const LOWER_PRIORITY = /\b(admission date|discharge date)\b/i;
+
+  const usable = candidates.filter((c) => !NEVER_THE_DATE.test(contextBefore(c.index)));
+  const pool = usable.length ? usable : candidates; // never return nothing just because every date looked excluded
+  const preferred = pool.find((c) => !LOWER_PRIORITY.test(contextBefore(c.index)));
+  return (preferred || pool[0]).date;
 }
 
 // ---------- medical bill classification ----------
@@ -888,19 +911,40 @@ function classifyBillType(text) {
 // ---------- claims-data extraction (best-effort regex; a smarter optional AI
 // pass in app.js can override these per unit) ----------
 
-function extractDoctorName(text) {
-  // [ \t] (not \s) so the match can't cross a line break onto the next line's text.
-  const m = (text || "").match(/Dr\.?[ \t]+[A-Z][\w.]+(?:[ \t]+[A-Z][\w.]+){0,3}/);
-  if (!m) return "";
-  // Drop a trailing qualification the name regex swept up (e.g. "Dr. Kumar MBBS").
-  const words = m[0].replace(/[ \t]+/g, " ").trim().split(" ");
-  while (words.length > 2 && QUALIFICATIONS.includes(words[words.length - 1].replace(/,$/, "").toUpperCase())) {
+const QUALIFICATIONS = ["MBBS", "MD", "MS", "DNB", "DM", "BDS", "MRCP", "FRCS", "BAMS", "BHMS", "MCh", "DGO"];
+
+// Drop a leading "Dr"/OCR-misread "Or" title (so the field holds just the name,
+// not "Dr. X") and a trailing qualification the match swept up ("Dr. Kumar MBBS").
+// Rejects a garbage/blank capture (a stray "-" or "." where a name should be).
+function cleanDoctorName(raw) {
+  const s = (raw || "").trim().replace(/^(?:dr|or)\.?\s*/i, "").trim();
+  const words = s.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && QUALIFICATIONS.includes(words[words.length - 1].replace(/[.,]$/, "").toUpperCase())) {
     words.pop();
   }
-  return words.join(" ").replace(/,$/, "");
+  const name = words.join(" ").replace(/[.,]$/, "").trim();
+  return /[A-Za-z]{2,}/.test(name) ? name : "";
 }
 
-const QUALIFICATIONS = ["MBBS", "MD", "MS", "DNB", "DM", "BDS", "MRCP", "FRCS", "BAMS", "BHMS", "MCh", "DGO"];
+// Labeled fields ("Consultant:", "Doctor Name:") are tried first - far less likely
+// to pick up the wrong name (e.g. a clinic's own letterhead vs the actual
+// consulting doctor). Falling back to a bare "Dr. <name>" scan otherwise, tolerant
+// of OCR reading "Dr." as "Or." (the letters are easily confused) and of no space
+// after the title ("Dr.Onkar").
+function extractDoctorName(text) {
+  const t = text || "";
+  const labeled = t.match(/\b(?:consultant|doctor name|treating doctor|attending doctor|physician)\b\s*[:.]?\s*([^\n(]{2,60})/i);
+  if (labeled) {
+    const name = cleanDoctorName(labeled[1].split(/ {2,}|[|\t]/)[0]);
+    if (name) return name;
+  }
+  // [ \t] (not \s) so the match can't cross a line break onto the next line's text.
+  // A period OR a space is required after "Dr" (not both optional) - allowing
+  // neither made "DRUGS", "DRESSING" etc. match as "Dr" + capital-starting "name"
+  // (all-caps bill headers are common, so the letter after "DR" is often capital).
+  const m = t.match(/\b(?:[Dd][Rr]\.[ \t]*|[Dd][Rr][ \t]+|[Oo][Rr]\.[ \t]*)([A-Z][\w.]*(?:[ \t]+[A-Z][\w.]*){0,3})/);
+  return m ? cleanDoctorName(m[1]) : "";
+}
 function extractQualification(text) {
   const t = text || "";
   for (const q of QUALIFICATIONS) {
@@ -909,23 +953,82 @@ function extractQualification(text) {
   return "";
 }
 
+// The "no./number/#" token is REQUIRED (not optional) - "Bill Cum Receipt" (a
+// common Indian document title, not a number) was matching "bill" alone and
+// capturing "Cum" as if it were the bill number. Requiring a digit in the
+// captured value catches the rest of that false-positive shape. Falls back to
+// an admission number when there's genuinely no bill/invoice/receipt number on
+// the document (e.g. a provisional hospital bill).
+// The separator between "No" and the actual value tolerates 0-2 junk characters
+// (not just ":"/"."), since OCR often turns a colon into stray punctuation
+// (a real observed case: "Bill No ©1A200124B000439", the colon read as "©").
 function extractBillNumber(text) {
-  const m = (text || "").match(/\b(?:bill|invoice|receipt)\s*(?:no\.?|#|number)?\s*[:.]?\s*(\S+)/i);
-  return m ? m[1].replace(/[,.]$/, "") : "";
+  const t = text || "";
+  const SEP = "\\s*[^A-Za-z0-9\\s]{0,2}\\s*";
+  const m = t.match(new RegExp(`\\b(?:bill|invoice|receipt)\\s*(?:no\\.?|number|#)${SEP}([A-Za-z0-9/-]{2,25})`, "i"))
+    || t.match(new RegExp(`\\badmission\\s*(?:no\\.?|number|#)${SEP}([A-Za-z0-9/-]{2,25})`, "i"));
+  if (!m) return "";
+  const value = m[1].replace(/[.,/-]+$/, "");
+  return /\d/.test(value) ? value : "";
 }
 
 function extractFacilityName(text, type) {
   const lines = (text || "").split("\n").map((l) => l.trim()).filter(Boolean);
   const pattern = type === "medicine" ? /pharmacy|chemist|drug store/i : /clinic|hospital/i;
-  const line = lines.find((l) => pattern.test(l));
-  return line || "";
+  // A charges/total line item ("Total Hospital Charges: 23,999.00") can contain
+  // the same keyword as the actual letterhead name - prefer a line that doesn't
+  // also look like a line item, but still fall back to any match rather than blank.
+  const looksLikeLineItem = /\d{2,}|charges?|amount|payable|\bfee\b|\btotal\b/i;
+  return lines.find((l) => pattern.test(l) && !looksLikeLineItem.test(l))
+    || lines.find((l) => pattern.test(l))
+    || "";
 }
 
+// Real bills usually state the amount actually payable as "Total: 5150.00" or
+// "Amount Payable: 3650.00" with no currency symbol at all (requiring one meant
+// this never matched on plenty of real bills). Search line by line so a labeled
+// figure is matched against the number(s) on THAT line, in priority order: the
+// specific "payable" amount first, then a grand/net total, then a bare "total"
+// (which risks being just one line item's subtotal), then a balance-due figure.
+const AMOUNT_LABEL_TIERS = [
+  /\b(?:patient payable|amount payable|payable amount)\b/i,
+  /\b(?:grand total|net amount|total bill amount|net payable)\b/i,
+  /\btotal\b/i,
+  /\b(?:balance due|amount due|balance to pay)\b/i,
+];
 function extractAmount(text) {
-  const matches = [...(text || "").matchAll(/(?:rs\.?|inr|₹|\$)\s*([\d,]+(?:\.\d+)?)/gi)];
-  if (!matches.length) return "";
-  const values = matches.map((m) => parseFloat(m[1].replace(/,/g, "")));
-  return String(Math.max(...values));
+  const lines = (text || "").split("\n");
+  for (const labelRe of AMOUNT_LABEL_TIERS) {
+    let last = null;
+    for (const line of lines) {
+      if (!labelRe.test(line)) continue;
+      const nums = [...line.matchAll(/\d[\d,]*(?:\.\d{1,2})?/g)]
+        .map((m) => parseFloat(m[0].replace(/,/g, "")))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      if (nums.length) last = Math.max(...nums);
+    }
+    if (last !== null) return String(last);
+  }
+  return "";
+}
+
+// Real phone photos of bills are often small (well under 1000px) and OCR on them
+// is dramatically worse than on the same page at a real working resolution -
+// tesseract goes from reading two or three words per line to reading almost the
+// whole page correctly. Never downscale (that only hurts), and cap the scale
+// factor so a tiny thumbnail doesn't balloon into a multi-second, huge canvas.
+function upscaleForOcr(canvas, targetLongEdge = 2000, maxScale = 4) {
+  const longEdge = Math.max(canvas.width, canvas.height);
+  if (longEdge >= targetLongEdge) return canvas;
+  const scale = Math.min(maxScale, targetLongEdge / longEdge);
+  const out = document.createElement("canvas");
+  out.width = Math.round(canvas.width * scale);
+  out.height = Math.round(canvas.height * scale);
+  const ctx = out.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(canvas, 0, 0, out.width, out.height);
+  return out;
 }
 
 // Try the page upright, then rotated, until a date is found - this solves both
@@ -935,9 +1038,10 @@ function extractAmount(text) {
 // have to run OCR a second time.
 async function analyzePage(canvas) {
   const worker = await loadOcrWorker();
+  const ocrCanvas = upscaleForOcr(canvas);
   let firstText = "";
   for (const angle of [0, 90, 180, 270]) {
-    const { data } = await worker.recognize(rotateCanvas(canvas, angle));
+    const { data } = await worker.recognize(rotateCanvas(ocrCanvas, angle));
     if (angle === 0) firstText = data.text;
     const date = extractDate(data.text);
     if (date) return { date, rotation: angle, text: data.text };
