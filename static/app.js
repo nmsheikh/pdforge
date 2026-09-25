@@ -1082,6 +1082,7 @@ function initMedicalReview() {
       files.forEach((f) => fd.append("files", f));
       const data = await (await postForm("/api/analyze-medical-bills", fd)).json();
       medUnits = data.units;
+      sortMedUnits();
       claimRows = medUnits.map((u) => claimRowFromUnit(u));
       renderMedicalReview();
       renderClaimsGrid();
@@ -1089,6 +1090,17 @@ function initMedicalReview() {
       grid.innerHTML = `<div class="pages-msg">${esc(e.message)}</div>`;
     }
   })();
+}
+
+// Same date-then-type ordering finalizeMedicalBills uses to build the PDF, applied
+// here too so the review grid always shows the order the final PDF will come out in.
+function sortMedUnits() {
+  const typeOrder = Object.keys(BILL_TYPE_LABELS);
+  const typeRank = (t) => { const i = typeOrder.indexOf(t); return i === -1 ? typeOrder.length : i; };
+  medUnits.sort((a, b) => {
+    const byDate = (a.date || "9999-99-99").localeCompare(b.date || "9999-99-99");
+    return byDate || typeRank(a.type) - typeRank(b.type);
+  });
 }
 
 function renderMedicalReview() {
@@ -1113,6 +1125,7 @@ function renderMedicalReview() {
     const i = +card.dataset.i;
     card.querySelectorAll("[data-field]").forEach((el) => el.addEventListener("change", () => {
       medUnits[i][el.dataset.field] = el.value || null;
+      sortMedUnits();
       renderMedicalReview();
     }));
   });

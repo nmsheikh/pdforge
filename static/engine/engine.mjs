@@ -813,8 +813,10 @@ const MONTHS = {
 function extractDate(text) {
   const t = (text || "").replace(/\s+/g, " ");
   const validDay = (d) => d >= 1 && d <= 31;
+  const MIN_YEAR = 1990, MAX_YEAR = new Date().getFullYear() + 1;
   const build = (year, month, day) => {
     if (!validDay(day) || month < 0 || month > 11) return null;
+    if (year < MIN_YEAR || year > MAX_YEAR) return null; // rejects OCR-garbled years like "3060"
     const d = new Date(year, month, day);
     return d.getMonth() === month ? d : null; // rejects e.g. 31 Feb rolling into March
   };
