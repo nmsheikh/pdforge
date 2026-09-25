@@ -172,7 +172,7 @@ const TOOLS = [
       <div class="pages med-grid" id="pageGrid"></div>
       <div class="picker-bar">
         <span class="hint grow">When everything above looks right, extract the claim data and sort the documents by date (doctor bill, then prescription, then medicine bill).</span>
-        <button type="button" class="primary sm" id="extractSortBtn">${icon("extract", "ui")} Extract and sort</button>
+        <button type="button" class="primary sm" id="extractSortBtn" disabled>${icon("extract", "ui")} Extract and sort</button>
       </div>
       <div class="claims-wrap" id="claimsWrap" hidden>
         <div class="picker-bar">
@@ -1101,6 +1101,7 @@ function initMedicalReview() {
       sortMedUnits();
       claimRows = [];
       renderMedicalReview();
+      $("extractSortBtn").disabled = false;
     } catch (e) {
       grid.innerHTML = `<div class="pages-msg">${esc(e.message)}</div>`;
     }
